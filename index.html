@@ -682,6 +682,19 @@ if(API_URL&&MY_NAME){
 }
 
 // Auto-refresh: 60s on mobile, 3min on desktop
+function updateTabs(){
+  var mt=document.getElementById('mobile-tabs');
+  var nt=document.querySelector('.nav-tabs');
+  if(window.innerWidth<=580){
+    if(mt)mt.style.cssText='display:flex!important';
+    if(nt)nt.style.cssText='display:none!important';
+  }else{
+    if(mt)mt.style.cssText='';
+    if(nt)nt.style.cssText='';
+  }
+}
+updateTabs();
+window.addEventListener('resize',updateTabs);
 const refreshMs=('ontouchstart' in window)?60000:180000;
 setInterval(()=>{if(API_URL)loadTasks()},refreshMs);
 // Also refresh when tab becomes visible again
