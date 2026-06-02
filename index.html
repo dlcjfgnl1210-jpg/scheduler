@@ -192,7 +192,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   </div>
 </nav>
 
-<div class="mobile-tabs">
+<div class="mobile-tabs" id="mobile-tabs">
   <button class="mobile-tab active" onclick="showPage('mine')">내 업무</button>
   <button class="mobile-tab" onclick="showPage('shared')">전체 현황</button>
 </div>
@@ -341,23 +341,14 @@ function setSyncState(state){
 
 // ── API ────────────────────────────────────────────
 async function api(params){
-  // GET for read operations, POST for write (avoids URL length limits)
-  const isWrite=params.action==='save'||params.action==='delete';
-  if(isWrite){
-    // POST via form-encoded body - works with Apps Script doPost
-    const body=new URLSearchParams();
-    Object.entries(params).forEach(([k,v])=>body.set(k,typeof v==='object'?JSON.stringify(v):String(v)));
-    const r=await fetch(API_URL,{method:'POST',body,redirect:'follow',headers:{'Content-Type':'application/x-www-form-urlencoded'}});
-    const text=await r.text();
-    try{return JSON.parse(text)}catch(e){throw new Error('POST parse error: '+text.slice(0,200))}
-  } else {
-    const url=new URL(API_URL);
-    Object.entries(params).forEach(([k,v])=>url.searchParams.set(k,typeof v==='object'?JSON.stringify(v):String(v)));
-    const r=await fetch(url.toString(),{redirect:'follow'});
-    if(!r.ok)throw new Error('HTTP '+r.status);
-    const text=await r.text();
-    try{return JSON.parse(text)}catch(e){throw new Error('Invalid JSON: '+text.slice(0,200))}
-  }
+  const url=new URL(API_URL);
+  Object.entries(params).forEach(function(e){
+    url.searchParams.set(e[0],typeof e[1]==='object'?JSON.stringify(e[1]):String(e[1]));
+  });
+  const r=await fetch(url.toString());
+  const text=await r.text();
+  try{return JSON.parse(text);}
+  catch(e){throw new Error('Error: '+text.slice(0,100));}
 }
 
 // ── LOAD ───────────────────────────────────────────
@@ -382,37 +373,38 @@ async function loadTasks(){
 // ── SAVE ───────────────────────────────────────────
 async function saveTask(){
   const title=document.getElementById('f-title').value.trim();
-  if(!title){alert('업무명을 입력해주세요.');return}
-  const existing=editId?tasks.find(x=>x.id===editId):null;
+  if(!title){alert('업무명을 입력해주세요.');return;}
+  if(!MY_NAME){alert('이름 설정이 필요합니다. 설정(⚙️)을 눌러주세요.');return;}
+  const existing=editId?tasks.find(function(x){return x.id===editId;}):null;
   const t={
     id:editId||String(Date.now()),
-    title,
+    title:title,
     cat:document.getElementById('f-cat').value.trim()||'기타',
     priority:document.getElementById('f-priority').value,
     status:document.getElementById('f-status').value,
     owner:document.getElementById('f-owner').value.trim(),
     worker:document.getElementById('f-worker').value.trim(),
     due:document.getElementById('f-due').value,
-    donedate:document.getElementById('f-donedate').value,
+    donedate:document.getElementById('f-donedate')?document.getElementById('f-donedate').value:'',
     progress:parseInt(document.getElementById('f-progress').value)||0,
     action:document.getElementById('f-action').value.trim(),
     next:document.getElementById('f-next').value.trim(),
     hq:document.getElementById('f-hq').value.trim(),
     result:document.getElementById('f-result').value.trim(),
     review:document.getElementById('f-review').value.trim(),
-    createdAt:existing?.createdAt||new Date().toISOString().slice(0,10),
-    createdBy:existing?.createdBy||MY_NAME
+    createdAt:existing?existing.createdAt:new Date().toISOString().slice(0,10),
+    createdBy:existing?existing.createdBy:MY_NAME
   };
+  if(!t.createdBy)t.createdBy=MY_NAME;
   try{
-    if(!t.createdBy)t.createdBy=MY_NAME;
     await api({action:'save',task:t});
     closeModal();
     await loadTasks();
     toast(editId?'업무가 수정되었습니다.':'새 업무가 추가되었습니다.');
     editId=null;
   }catch(e){
-    toast('저장 실패 — 내용이 너무 길거나 연결 문제입니다.',true);
-    console.error('Save failed:',e.message);
+    toast('저장 실패: 네트워크를 확인해주세요.',true);
+    console.error(e.message);
   }
 }
 
@@ -455,22 +447,27 @@ async function saveDonedate(id){
 }
 
 async function deleteTask(id){
-  if(!confirm('이 업무를 삭제하시겠습니까?'))return;
+  const t=tasks.find(function(x){return x.id===id;});
+  if(!confirm('['+(t?t.title:'업무')+'] 삭제하시겠습니까?\n이력은 1주일간 보관됩니다.'))return;
   try{
-    await api({action:'delete',id});
+    if(t){
+      const tr=Object.assign({},t,{deletedBy:MY_NAME,deletedAt:new Date().toISOString().slice(0,10)});
+      await api({action:'trash',task:tr});
+    }
+    await api({action:'delete',id:id});
     await loadTasks();
-    toast('업무가 삭제되었습니다.');
-  }catch(e){toast('삭제 실패',true)}
+    toast('삭제되었습니다.');
+  }catch(e){toast('삭제 실패',true);}
 }
 
 // ── DATE FORMAT ────────────────────────────────────
 function fmtD(d){
   if(!d)return'';
-  var s=String(d).trim();
+  const s=String(d).trim();
   if(!s||s==='undefined'||s==='null')return'';
-  var iso=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const iso=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if(iso)return parseInt(iso[2])+'월 '+parseInt(iso[3])+'일';
-  var dt=new Date(s);
+  const dt=new Date(s);
   if(!isNaN(dt.getTime()))return(dt.getMonth()+1)+'월 '+dt.getDate()+'일';
   return'';
 }
@@ -528,15 +525,16 @@ function toggleCard(id){document.getElementById('card-'+id)?.classList.toggle('e
 // ── DUE CHIP ───────────────────────────────────────
 function dueChip(due){
   if(!due)return'';
-  var s=String(due).trim();
+  const s=String(due).trim();
   if(!s||s==='undefined'||s==='null')return'';
-  var d,iso=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  let d;
+  const iso=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if(iso){d=new Date(parseInt(iso[1]),parseInt(iso[2])-1,parseInt(iso[3]));}
   else{d=new Date(s);}
   if(isNaN(d.getTime()))return'';
-  var today=new Date();today.setHours(0,0,0,0);d.setHours(0,0,0,0);
-  var diff=Math.round((d-today)/(1000*60*60*24));
-  var label=(d.getMonth()+1)+'월 '+d.getDate()+'일';
+  const today=new Date();today.setHours(0,0,0,0);d.setHours(0,0,0,0);
+  const diff=Math.round((d-today)/(1000*60*60*24));
+  const label=(d.getMonth()+1)+'월 '+d.getDate()+'일';
   if(diff<0)return'<span class="due-chip urgent"><i class="ti ti-alert-triangle" style="font-size:10px"></i> '+label+' ('+Math.abs(diff)+'일 초과)</span>';
   if(diff===0)return'<span class="due-chip urgent">오늘 마감</span>';
   if(diff<=3)return'<span class="due-chip soon">'+label+' (D-'+diff+')</span>';
@@ -549,7 +547,7 @@ function cardHTML(t,isMine){
   const sc={done:'s-done',inprog:'s-inprog',pending:'s-pending',review:'s-review'}[t.status]||'s-pending';
   const prog=Math.min(100,Math.max(0,parseInt(t.progress)||0));
   const progColor=prog>=80?'#639922':prog>=40?'#BA7517':'#185FA5';
-  const canEdit=isMine&&(t.createdBy===MY_NAME||!t.createdBy||t.createdBy==='미지정');
+  const canEdit=isMine&&t.createdBy===MY_NAME;
 
   return`<div class="task-card" id="card-${t.id}">
 <div class="task-head">
@@ -599,10 +597,10 @@ function cardHTML(t,isMine){
     ${t.review?`<p>${String(t.review).replace(/\n/g,'<br>')}</p>`:''}
     ${canEdit?`<div class="review-edit-row"><textarea id="rv-${t.id}" placeholder="개선점을 입력하세요...">${t.review||''}</textarea><button class="review-save-btn" onclick="saveReview('${t.id}')">저장</button></div>`:''}
   </div>
-  ${canEdit?`<div class="card-acts">
+  <div class="card-acts">
     <button class="act-btn danger" onclick="deleteTask('${t.id}')"><i class="ti ti-trash"></i> 삭제</button>
-    <button class="act-btn" onclick="openModal('${t.id}')"><i class="ti ti-edit"></i> 수정</button>
-  </div>`:''}
+    ${canEdit?`<button class="act-btn" onclick="openModal('${t.id}')"><i class="ti ti-edit"></i> 수정</button>`:''}
+  </div>
 </div>
 </div>`;
 }
@@ -614,73 +612,63 @@ function render(){
 }
 
 function renderMine(){
-  const mine=tasks.filter(t=>t.createdBy===MY_NAME||!t.createdBy||t.createdBy==='미지정');
-  mine.sort((a,b)=>{
+  const mine=tasks.filter(function(t){return t.createdBy===MY_NAME;});
+  mine.sort(function(a,b){
     const da=a.status==='done',db=b.status==='done';
     if(da&&!db)return 1;if(!da&&db)return -1;
-    const getD=t=>{
+    function getD(t){
       if(!t.due)return 99999999;
-      var iso=String(t.due).match(/^(\d{4})-(\d{2})-(\d{2})/);
+      const iso=String(t.due).match(/^(\d{4})-(\d{2})-(\d{2})/);
       if(iso)return parseInt(iso[1])*10000+parseInt(iso[2])*100+parseInt(iso[3]);
-      var dt=new Date(t.due);return isNaN(dt)?99999999:dt.getFullYear()*10000+(dt.getMonth()+1)*100+dt.getDate();
-    };
+      const dt=new Date(t.due);return isNaN(dt)?99999999:dt.getFullYear()*10000+(dt.getMonth()+1)*100+dt.getDate();
+    }
     return getD(a)-getD(b);
   });
-  const filtered=currentFilter==='all'?mine:mine.filter(t=>t.status===currentFilter);
+  const filtered=currentFilter==='all'?mine:mine.filter(function(t){return t.status===currentFilter;});
   document.getElementById('s-total').textContent=mine.length;
-  document.getElementById('s-inprog').textContent=mine.filter(t=>t.status==='inprog').length;
-  document.getElementById('s-done').textContent=mine.filter(t=>t.status==='done').length;
-  document.getElementById('s-high').textContent=mine.filter(t=>t.priority==='high').length;
+  document.getElementById('s-inprog').textContent=mine.filter(function(t){return t.status==='inprog';}).length;
+  document.getElementById('s-done').textContent=mine.filter(function(t){return t.status==='done';}).length;
+  document.getElementById('s-high').textContent=mine.filter(function(t){return t.priority==='high';}).length;
   const list=document.getElementById('task-list-mine');
-  if(!filtered.length){
-    list.innerHTML='<div class="empty">'+(mine.length?'해당 필터의 업무가 없습니다.':'아직 등록된 업무가 없습니다.')+'</div>';
-    return;
-  }
+  if(!filtered.length){list.innerHTML='<div class="empty">'+(mine.length?'해당 필터의 업무가 없습니다.':'아직 등록된 업무가 없습니다.')+'</div>';return;}
   if(currentFilter==='all'){
-    const active=filtered.filter(t=>t.status!=='done');
-    const done=filtered.filter(t=>t.status==='done');
-    var h='';
-    if(active.length)h+='<div class="task-list">'+active.map(t=>cardHTML(t,true)).join('')+'</div>';
-    if(done.length)h+='<div class="done-section"><div class="done-header"><i class="ti ti-circle-check" style="color:#3B6D11;font-size:14px"></i> 완료 업무 <span class="done-count">'+done.length+'</span></div><div class="task-list done-list">'+done.map(t=>cardHTML(t,true)).join('')+'</div></div>';
+    const active=filtered.filter(function(t){return t.status!=='done';});
+    const done=filtered.filter(function(t){return t.status==='done';});
+    let h='';
+    if(active.length)h+='<div class="task-list">'+active.map(function(t){return cardHTML(t,true);}).join('')+'</div>';
+    if(done.length)h+='<div class="done-section"><div class="done-header"><i class="ti ti-circle-check" style="color:#3B6D11;font-size:14px"></i> 완료 업무 <span class="done-count">'+done.length+'</span></div><div class="task-list done-list">'+done.map(function(t){return cardHTML(t,true);}).join('')+'</div></div>';
     list.innerHTML=h;
-  } else {
-    list.innerHTML='<div class="task-list">'+filtered.map(t=>cardHTML(t,true)).join('')+'</div>';
+  }else{
+    list.innerHTML='<div class="task-list">'+filtered.map(function(t){return cardHTML(t,true);}).join('')+'</div>';
   }
 }
 
 function renderShared(){
   if(!tasks.length){document.getElementById('shared-content').innerHTML='<div class="empty">등록된 업무가 없습니다.</div>';return;}
   const byPerson={};
-  tasks.forEach(t=>{
-    var name=String(t.createdBy||'').trim();
+  tasks.forEach(function(t){
+    let name=String(t.createdBy||'').trim();
     if(!name||name.length>20||/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun|Jan|Feb|Mar|\d{4})/i.test(name)||/GMT/.test(name))name='미지정';
     if(!byPerson[name])byPerson[name]=[];
     byPerson[name].push(t);
   });
-  var out='';
-  Object.entries(byPerson).forEach(function(entry){
-    var name=entry[0],list=entry[1];
-    var initials=name.slice(0,2);
-    var active=list.filter(t=>t.status!=='done');
-    var done=list.filter(t=>t.status==='done');
-    active.sort((a,b)=>{
-      var getD=function(t){
-        if(!t.due)return 99999999;
-        var iso=String(t.due).match(/^(\d{4})-(\d{2})-(\d{2})/);
-        if(iso)return parseInt(iso[1])*10000+parseInt(iso[2])*100+parseInt(iso[3]);
-        var dt=new Date(t.due);return isNaN(dt)?99999999:dt.getFullYear()*10000+(dt.getMonth()+1)*100+dt.getDate();
-      };
+  let out='';
+  Object.keys(byPerson).forEach(function(name){
+    const list=byPerson[name];
+    const active=list.filter(function(t){return t.status!=='done';});
+    const done=list.filter(function(t){return t.status==='done';});
+    active.sort(function(a,b){
+      function getD(t){if(!t.due)return 99999999;const iso=String(t.due).match(/^(\d{4})-(\d{2})-(\d{2})/);if(iso)return parseInt(iso[1])*10000+parseInt(iso[2])*100+parseInt(iso[3]);const dt=new Date(t.due);return isNaN(dt)?99999999:dt.getFullYear()*10000+(dt.getMonth()+1)*100+dt.getDate();}
       return getD(a)-getD(b);
     });
-    var isM=(name==='미지정');
+    const isM=(name==='미지정');
     out+='<div class="member-section"><div class="member-header">';
-    out+='<div class="member-avatar" style="'+(isM?'background:#F1EFE8;color:#999':'')+'">'+initials+'</div>';
+    out+='<div class="member-avatar" style="'+(isM?'background:#F1EFE8;color:#999':'')+'">'+name.slice(0,2)+'</div>';
     out+='<span>'+name+'</span>';
     out+='<span style="font-size:12px;color:var(--text2);font-weight:400"> — 진행중 '+active.length+'건 · 완료 '+done.length+'건</span>';
-    if(isM)out+='<span style="font-size:11px;color:#854F0B;background:#FAEEDA;padding:2px 8px;border-radius:10px;margin-left:6px">내 업무 탭에서 수정/삭제</span>';
     out+='</div>';
-    if(active.length)out+='<div class="task-list">'+active.map(t=>cardHTML(t,false)).join('')+'</div>';
-    if(done.length)out+='<div class="done-section"><div class="done-header"><i class="ti ti-circle-check" style="color:#3B6D11;font-size:14px"></i> 완료 <span class="done-count">'+done.length+'</span></div><div class="task-list done-list">'+done.map(t=>cardHTML(t,false)).join('')+'</div></div>';
+    if(active.length)out+='<div class="task-list">'+active.map(function(t){return cardHTML(t,false);}).join('')+'</div>';
+    if(done.length)out+='<div class="done-section"><div class="done-header"><i class="ti ti-circle-check" style="color:#3B6D11;font-size:14px"></i> 완료 <span class="done-count">'+done.length+'</span></div><div class="task-list done-list">'+done.map(function(t){return cardHTML(t,false);}).join('')+'</div></div>';
     out+='</div>';
   });
   document.getElementById('shared-content').innerHTML=out;
