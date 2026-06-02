@@ -4,12 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>업무 스케줄러 — PH 법인</title>
-<meta name="theme-color" content="#185FA5">
+<meta name="theme-color" content="#B8922D">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="업무 스케줄러">
-<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='38' fill='%23185FA5'/%3E%3Ctext x='96' y='130' text-anchor='middle' font-size='110' font-family='sans-serif' fill='white'%3E%F0%9F%93%8B%3C/text%3E%3C/svg%3E">
-<link rel="manifest" id="manifest-link">
+<meta name="apple-mobile-web-app-title" content="MegaGen 업무">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="manifest" href="manifest.json">
+
+
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -305,12 +307,18 @@ let MY_NAME=localStorage.getItem('sch_name')||'';
 function saveSetup(){
   const url=document.getElementById('setup-url').value.trim();
   const name=document.getElementById('setup-name').value.trim();
-  if(!url||!name){alert('URL과 이름을 모두 입력해주세요.');return}
+  if(!url){alert('Apps Script URL을 입력해주세요.');return;}
+  if(!name||name.length<1){alert('이름을 입력해주세요.');return;}
+  if(name.length>20){alert('이름은 20자 이내로 입력해주세요.');return;}
+  // 날짜 형식 이름 차단
+  if(/^\d{4}/.test(name)||/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)/i.test(name)){
+    alert('올바른 이름을 입력해주세요.');return;
+  }
   localStorage.setItem('sch_api',url);
   localStorage.setItem('sch_name',name);
   API_URL=url;MY_NAME=name;
   document.getElementById('setup-wrap').classList.remove('open');
-  document.getElementById('nav-name').textContent=name;
+  document.getElementById('nav-name').textContent=MY_NAME;
   loadTasks();
 }
 function resetSetup(){
@@ -341,14 +349,16 @@ function setSyncState(state){
 
 // ── API ────────────────────────────────────────────
 async function api(params){
-  const url=new URL(API_URL);
-  Object.entries(params).forEach(function(e){
-    url.searchParams.set(e[0],typeof e[1]==='object'?JSON.stringify(e[1]):String(e[1]));
+  // iOS Safari 호환: URLSearchParams 사용 (fetch GET)
+  const sp=new URLSearchParams();
+  Object.keys(params).forEach(function(k){
+    const v=params[k];
+    sp.append(k, typeof v==='object'?JSON.stringify(v):String(v));
   });
-  const r=await fetch(url.toString());
+  const r=await fetch(API_URL+'?'+sp.toString());
   const text=await r.text();
   try{return JSON.parse(text);}
-  catch(e){throw new Error('Error: '+text.slice(0,100));}
+  catch(e){throw new Error('Parse error: '+text.slice(0,100));}
 }
 
 // ── LOAD ───────────────────────────────────────────
@@ -374,8 +384,11 @@ async function loadTasks(){
 async function saveTask(){
   const title=document.getElementById('f-title').value.trim();
   if(!title){alert('업무명을 입력해주세요.');return;}
-  if(!MY_NAME){alert('이름 설정이 필요합니다. 설정(⚙️)을 눌러주세요.');return;}
+  if(!MY_NAME||MY_NAME.trim()===''){
+    alert('이름 설정이 필요합니다.\n설정(⚙️)을 눌러주세요.');return;
+  }
   const existing=editId?tasks.find(function(x){return x.id===editId;}):null;
+  const createdBy=existing?existing.createdBy:MY_NAME;
   const t={
     id:editId||String(Date.now()),
     title:title,
@@ -384,8 +397,8 @@ async function saveTask(){
     status:document.getElementById('f-status').value,
     owner:document.getElementById('f-owner').value.trim(),
     worker:document.getElementById('f-worker').value.trim(),
-    due:document.getElementById('f-due').value,
-    donedate:document.getElementById('f-donedate')?document.getElementById('f-donedate').value:'',
+    due:document.getElementById('f-due').value||'',
+    donedate:(document.getElementById('f-donedate')||{}).value||'',
     progress:parseInt(document.getElementById('f-progress').value)||0,
     action:document.getElementById('f-action').value.trim(),
     next:document.getElementById('f-next').value.trim(),
@@ -393,14 +406,15 @@ async function saveTask(){
     result:document.getElementById('f-result').value.trim(),
     review:document.getElementById('f-review').value.trim(),
     createdAt:existing?existing.createdAt:new Date().toISOString().slice(0,10),
-    createdBy:existing?existing.createdBy:MY_NAME
+    createdBy:createdBy&&createdBy.trim()!==''?createdBy:MY_NAME
   };
-  if(!t.createdBy)t.createdBy=MY_NAME;
+  // 마지막 보험: createdBy 절대 비우지 않음
+  if(!t.createdBy||t.createdBy.trim()==='')t.createdBy=MY_NAME;
   try{
     await api({action:'save',task:t});
     closeModal();
     await loadTasks();
-    toast(editId?'업무가 수정되었습니다.':'새 업무가 추가되었습니다.');
+    toast(editId?'수정되었습니다.':'추가되었습니다.');
     editId=null;
   }catch(e){
     toast('저장 실패: 네트워크를 확인해주세요.',true);
@@ -706,38 +720,12 @@ document.addEventListener('visibilitychange',()=>{
 let deferredPrompt=null;
 
 // Inject manifest dynamically so it works from any origin
-function injectManifest(){
-  const manifest={
-    name:'업무 스케줄러 — PH 법인',
-    short_name:'업무 스케줄러',
-    description:'PH 법인 업무 공유 스케줄러',
-    start_url:location.href,
-    display:'standalone',
-    background_color:'#f1f0ec',
-    theme_color:'#185FA5',
-    orientation:'portrait-primary',
-    icons:[
-      {src:"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='38' fill='%23185FA5'/%3E%3Ctext x='96' y='130' text-anchor='middle' font-size='110' font-family='sans-serif' fill='white'%3E%F0%9F%93%8B%3C/text%3E%3C/svg%3E",sizes:'192x192',type:'image/svg+xml',purpose:'any maskable'},
-      {src:"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='100' fill='%23185FA5'/%3E%3Ctext x='256' y='350' text-anchor='middle' font-size='300' font-family='sans-serif' fill='white'%3E%F0%9F%93%8B%3C/text%3E%3C/svg%3E",sizes:'512x512',type:'image/svg+xml',purpose:'any maskable'}
-    ]
-  };
-  const blob=new Blob([JSON.stringify(manifest)],{type:'application/json'});
-  const url=URL.createObjectURL(blob);
-  document.getElementById('manifest-link').setAttribute('href',url);
-}
-injectManifest();
+// PWA manifest loaded via link tag
 
 // Register service worker for offline cache
+// Register service worker
 if('serviceWorker' in navigator){
-  const swCode=`
-self.addEventListener('install',e=>{
-  e.waitUntil(caches.open('sch-v1').then(c=>c.addAll([location.pathname])));
-});
-self.addEventListener('fetch',e=>{
-  e.respondWith(fetch(e.request).catch(()=>caches.match(e.request)));
-});`;
-  const swBlob=new Blob([swCode],{type:'application/javascript'});
-  navigator.serviceWorker.register(URL.createObjectURL(swBlob)).catch(()=>{});
+  navigator.serviceWorker.register('./sw.js').catch(function(){});
 }
 
 // Android Chrome — show install button
