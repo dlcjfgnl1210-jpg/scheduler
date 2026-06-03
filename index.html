@@ -359,7 +359,17 @@ function pickDisplayOwner(t){
     var s=String(candidates[i]||'').trim();
     if(!isBadDisplayName(s))return s;
   }
-  return '미지정';
+  return '작성자확인필요';
+}
+
+function normalizeClientTask(t){
+  t=t||{};
+  if(isBadDisplayName(t.createdBy) || String(t.createdBy||'').trim()===String(t.createdAt||'').trim() || String(t.createdBy||'').trim()===String(t.due||'').trim()){
+    var replacement=pickDisplayOwner({createdBy:'',owner:t.owner,worker:t.worker});
+    if(replacement==='작성자확인필요' && MY_NAME && !isBadDisplayName(MY_NAME)) replacement=MY_NAME;
+    t.createdBy=replacement;
+  }
+  return t;
 }
 
 // createdBy 보장 함수 - 모든 저장 전 호출
@@ -367,8 +377,8 @@ function ensureCreatedBy(task){
   if(!task)return task;
   var cb=String(task.createdBy||'').trim();
   // 날짜 형식이면 무효
-  if(!cb||cb.length>20||/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun|\d{4})/i.test(cb)||/GMT/.test(cb)){
-    task.createdBy=MY_NAME||'';
+  if(!cb||cb.length>20||/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|\d{4})/i.test(cb)||/GMT/.test(cb)||cb===String(task.createdAt||'').trim()||cb===String(task.due||'').trim()){
+    task.createdBy=MY_NAME||task.owner||task.worker||'작성자확인필요';
   }
   // createdAt도 날짜 객체면 변환
   var ca=String(task.createdAt||'').trim();
@@ -422,7 +432,7 @@ async function loadTasks(){
   setSyncState('loading');
   try{
     const data=await api({action:'getAll'});
-    tasks=Array.isArray(data.tasks)?data.tasks:[];
+    tasks=(Array.isArray(data.tasks)?data.tasks:[]).map(normalizeClientTask);
     render();
     const now=new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
     document.getElementById('last-sync').textContent='동기화: '+now;
@@ -443,7 +453,7 @@ async function saveTask(){
     alert('이름 설정이 필요합니다.\n설정(⚙️)을 눌러주세요.');return;
   }
   const existing=editId?tasks.find(function(x){return x.id===editId;}):null;
-  const createdBy=existing?existing.createdBy:MY_NAME;
+  const createdBy=(existing && !isBadDisplayName(existing.createdBy) && existing.createdBy!==existing.createdAt && existing.createdBy!==existing.due)?existing.createdBy:MY_NAME;
   let t={
     id:editId||String(Date.now()),
     title:title,
@@ -485,7 +495,7 @@ async function markDone(id){
   const today=new Date().toISOString().slice(0,10);
   const updated=ensureCreatedBy({...t,status:'done',progress:100,donedate:t.donedate||today});
   try{
-    await api({action:'save',task:updated});
+    await api({action:'save',actor:MY_NAME,task:updated});
     await loadTasks();
     toast('완료 처리했습니다.');
   }catch(e){toast('처리 실패',true)}
@@ -496,7 +506,7 @@ async function saveReview(id){
   if(!t)return;
   const rv=document.getElementById('rv-'+id)?.value.trim()||'';
   const updated=ensureCreatedBy({...t,review:rv});
-  try{await api({action:'save',task:updated});await loadTasks();toast('개선점이 저장되었습니다.');}
+  try{await api({action:'save',actor:MY_NAME,task:updated});await loadTasks();toast('개선점이 저장되었습니다.');}
   catch(e){toast('저장 실패',true)}
 }
 async function saveResult(id){
@@ -504,7 +514,7 @@ async function saveResult(id){
   if(!t)return;
   const rs=document.getElementById('rs-'+id)?.value.trim()||'';
   const updated=ensureCreatedBy({...t,result:rs});
-  try{await api({action:'save',task:updated});await loadTasks();toast('성과가 저장되었습니다.');}
+  try{await api({action:'save',actor:MY_NAME,task:updated});await loadTasks();toast('성과가 저장되었습니다.');}
   catch(e){toast('저장 실패',true)}
 }
 async function saveDonedate(id){
@@ -512,7 +522,7 @@ async function saveDonedate(id){
   if(!t)return;
   const dd=document.getElementById('dd-'+id)?.value||'';
   const updated=ensureCreatedBy({...t,donedate:dd});
-  try{await api({action:'save',task:updated});await loadTasks();toast('완료일이 저장되었습니다.');}
+  try{await api({action:'save',actor:MY_NAME,task:updated});await loadTasks();toast('완료일이 저장되었습니다.');}
   catch(e){toast('저장 실패',true)}
 }
 
@@ -682,7 +692,7 @@ function render(){
 }
 
 function renderMine(){
-  const mine=tasks.filter(function(t){return t.createdBy===MY_NAME;});
+  const mine=tasks.filter(function(t){return t.createdBy===MY_NAME || pickDisplayOwner(t)===MY_NAME;});
   mine.sort(function(a,b){
     const da=a.status==='done',db=b.status==='done';
     if(da&&!db)return 1;if(!da&&db)return -1;
@@ -730,7 +740,7 @@ function renderShared(){
       function getD(t){if(!t.due)return 99999999;const iso=String(t.due).match(/^(\d{4})-(\d{2})-(\d{2})/);if(iso)return parseInt(iso[1])*10000+parseInt(iso[2])*100+parseInt(iso[3]);const dt=new Date(t.due);return isNaN(dt)?99999999:dt.getFullYear()*10000+(dt.getMonth()+1)*100+dt.getDate();}
       return getD(a)-getD(b);
     });
-    const isM=(name==='미지정');
+    const isM=(name==='작성자확인필요');
     out+='<div class="member-section"><div class="member-header">';
     out+='<div class="member-avatar" style="'+(isM?'background:#F1EFE8;color:#999':'')+'">'+name.slice(0,2)+'</div>';
     out+='<span>'+name+'</span>';

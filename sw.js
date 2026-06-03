@@ -1,4 +1,4 @@
-const CACHE_NAME = 'megagen-scheduler-v2';
+const CACHE_NAME = 'megagen-scheduler-v3-20260603';
 const ASSETS = [
   './',
   './index.html',
@@ -8,18 +8,10 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', function(e) {
+  self.skipWaiting();
   e.waitUntil(
     caches.open(CACHE_NAME).then(function(cache) {
-      return cache.addAll(ASSETS);
-    })
-  );
-});
-
-self.addEventListener('fetch', function(e) {
-  // Network first, fallback to cache
-  e.respondWith(
-    fetch(e.request).catch(function() {
-      return caches.match(e.request);
+      return cache.addAll(ASSETS).catch(function(){ return Promise.resolve(); });
     })
   );
 });
@@ -31,6 +23,32 @@ self.addEventListener('activate', function(e) {
         names.filter(function(n) { return n !== CACHE_NAME; })
              .map(function(n) { return caches.delete(n); })
       );
+    }).then(function(){ return self.clients.claim(); })
+  );
+});
+
+self.addEventListener('fetch', function(e) {
+  if (e.request.method !== 'GET') return;
+
+  var url = new URL(e.request.url);
+  var isHtml = e.request.mode === 'navigate' || url.pathname.endsWith('/') || url.pathname.endsWith('/index.html');
+
+  if (isHtml) {
+    e.respondWith(
+      fetch(e.request, { cache: 'no-store' }).catch(function() {
+        return caches.match('./index.html').then(function(res){ return res || caches.match(e.request); });
+      })
+    );
+    return;
+  }
+
+  e.respondWith(
+    fetch(e.request).then(function(res) {
+      var clone = res.clone();
+      caches.open(CACHE_NAME).then(function(cache) { cache.put(e.request, clone); });
+      return res;
+    }).catch(function() {
+      return caches.match(e.request);
     })
   );
 });
