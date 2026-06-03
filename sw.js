@@ -1,4 +1,4 @@
-const CACHE_NAME = 'megagen-scheduler-v1';
+const CACHE_NAME = 'megagen-scheduler-v2';
 const ASSETS = [
   './',
   './index.html',

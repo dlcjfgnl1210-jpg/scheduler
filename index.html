@@ -348,15 +348,70 @@ function setSyncState(state){
 }
 
 // ── API ────────────────────────────────────────────
+function isBadDisplayName(v){
+  var s=String(v||'').trim();
+  return !s||s.length>20||/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|\d{4})/i.test(s)||/GMT/.test(s);
+}
+
+function pickDisplayOwner(t){
+  var candidates=[t&&t.createdBy,t&&t.owner,t&&t.worker];
+  for(var i=0;i<candidates.length;i++){
+    var s=String(candidates[i]||'').trim();
+    if(!isBadDisplayName(s))return s;
+  }
+  return '미지정';
+}
+
+// createdBy 보장 함수 - 모든 저장 전 호출
+function ensureCreatedBy(task){
+  if(!task)return task;
+  var cb=String(task.createdBy||'').trim();
+  // 날짜 형식이면 무효
+  if(!cb||cb.length>20||/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun|\d{4})/i.test(cb)||/GMT/.test(cb)){
+    task.createdBy=MY_NAME||'';
+  }
+  // createdAt도 날짜 객체면 변환
+  var ca=String(task.createdAt||'').trim();
+  if(!ca||ca.length>10||/GMT/.test(ca)){
+    task.createdAt=new Date().toISOString().slice(0,10);
+  }
+  return task;
+}
+
 async function api(params){
-  // iOS Safari 호환: URLSearchParams 사용 (fetch GET)
-  const sp=new URLSearchParams();
+  // task 객체에서 빈 필드 제거하여 URL 길이 줄임
+  if(params.task&&typeof params.task==='object'){
+    var cleaned={};
+    Object.keys(params.task).forEach(function(k){
+      var v=params.task[k];
+      if(v!==''&&v!==null&&v!==undefined&&v!==0)cleaned[k]=v;
+    });
+    // createdBy는 빈값이어도 반드시 포함
+    if(!cleaned.createdBy)cleaned.createdBy=MY_NAME||'';
+    if(!cleaned.id)cleaned.id=params.task.id;
+    params.task=cleaned;
+  }
+  var sp=new URLSearchParams();
   Object.keys(params).forEach(function(k){
-    const v=params[k];
+    var v=params[k];
     sp.append(k, typeof v==='object'?JSON.stringify(v):String(v));
   });
-  const r=await fetch(API_URL+'?'+sp.toString());
-  const text=await r.text();
+  var url=API_URL+'?'+sp.toString();
+  // URL 길이 체크 (iOS Safari GET 제한 ~2000자)
+  if(url.length>1800&&params.action==='save'){
+    // 긴 텍스트 필드 줄이기
+    if(params.task.action&&params.task.action.length>200)params.task.action=params.task.action.slice(0,200);
+    if(params.task.next&&params.task.next.length>200)params.task.next=params.task.next.slice(0,200);
+    if(params.task.hq&&params.task.hq.length>200)params.task.hq=params.task.hq.slice(0,200);
+    sp=new URLSearchParams();
+    Object.keys(params).forEach(function(k){
+      var v=params[k];
+      sp.append(k, typeof v==='object'?JSON.stringify(v):String(v));
+    });
+    url=API_URL+'?'+sp.toString();
+  }
+  var r=await fetch(url);
+  var text=await r.text();
   try{return JSON.parse(text);}
   catch(e){throw new Error('Parse error: '+text.slice(0,100));}
 }
@@ -389,7 +444,7 @@ async function saveTask(){
   }
   const existing=editId?tasks.find(function(x){return x.id===editId;}):null;
   const createdBy=existing?existing.createdBy:MY_NAME;
-  const t={
+  let t={
     id:editId||String(Date.now()),
     title:title,
     cat:document.getElementById('f-cat').value.trim()||'기타',
@@ -410,8 +465,9 @@ async function saveTask(){
   };
   // 마지막 보험: createdBy 절대 비우지 않음
   if(!t.createdBy||t.createdBy.trim()==='')t.createdBy=MY_NAME;
+  t=ensureCreatedBy(t);
   try{
-    await api({action:'save',task:t});
+    await api({action:'save',actor:MY_NAME,task:t});
     closeModal();
     await loadTasks();
     toast(editId?'수정되었습니다.':'추가되었습니다.');
@@ -427,7 +483,7 @@ async function markDone(id){
   const t=tasks.find(x=>x.id===id);
   if(!t)return;
   const today=new Date().toISOString().slice(0,10);
-  const updated={...t,status:'done',progress:100,donedate:t.donedate||today};
+  const updated=ensureCreatedBy({...t,status:'done',progress:100,donedate:t.donedate||today});
   try{
     await api({action:'save',task:updated});
     await loadTasks();
@@ -439,7 +495,7 @@ async function saveReview(id){
   const t=tasks.find(x=>x.id===id);
   if(!t)return;
   const rv=document.getElementById('rv-'+id)?.value.trim()||'';
-  const updated={...t,review:rv};
+  const updated=ensureCreatedBy({...t,review:rv});
   try{await api({action:'save',task:updated});await loadTasks();toast('개선점이 저장되었습니다.');}
   catch(e){toast('저장 실패',true)}
 }
@@ -447,7 +503,7 @@ async function saveResult(id){
   const t=tasks.find(x=>x.id===id);
   if(!t)return;
   const rs=document.getElementById('rs-'+id)?.value.trim()||'';
-  const updated={...t,result:rs};
+  const updated=ensureCreatedBy({...t,result:rs});
   try{await api({action:'save',task:updated});await loadTasks();toast('성과가 저장되었습니다.');}
   catch(e){toast('저장 실패',true)}
 }
@@ -455,7 +511,7 @@ async function saveDonedate(id){
   const t=tasks.find(x=>x.id===id);
   if(!t)return;
   const dd=document.getElementById('dd-'+id)?.value||'';
-  const updated={...t,donedate:dd};
+  const updated=ensureCreatedBy({...t,donedate:dd});
   try{await api({action:'save',task:updated});await loadTasks();toast('완료일이 저장되었습니다.');}
   catch(e){toast('저장 실패',true)}
 }
@@ -572,7 +628,7 @@ function cardHTML(t,isMine){
       ${t.cat?`<span class="badge">${t.cat}</span>`:''}
       <span class="badge ${sc}">${STA[t.status]||t.status}</span>
       ${t.owner?`<span class="badge" style="background:transparent;color:var(--text2)"><i class="ti ti-user" style="font-size:10px"></i> ${t.owner}</span>`:''}
-      ${!isMine&&t.createdBy?`<span class="badge" style="background:#EEEDFE;color:#534AB7">${t.createdBy}</span>`:''}
+      ${!isMine&&!isBadDisplayName(t.createdBy)?`<span class="badge" style="background:#EEEDFE;color:#534AB7">${t.createdBy}</span>`:''}
     </div>
     <div class="task-info-row">
       ${t.action?`<span class="task-plan-preview"><i class="ti ti-file-text" style="font-size:11px;vertical-align:-1px"></i> ${t.action.replace(/\n/g,' ').slice(0,60)}${t.action.length>60?'…':''}</span>`:''}
@@ -661,8 +717,7 @@ function renderShared(){
   if(!tasks.length){document.getElementById('shared-content').innerHTML='<div class="empty">등록된 업무가 없습니다.</div>';return;}
   const byPerson={};
   tasks.forEach(function(t){
-    let name=String(t.createdBy||'').trim();
-    if(!name||name.length>20||/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun|Jan|Feb|Mar|\d{4})/i.test(name)||/GMT/.test(name))name='미지정';
+    let name=pickDisplayOwner(t);
     if(!byPerson[name])byPerson[name]=[];
     byPerson[name].push(t);
   });
