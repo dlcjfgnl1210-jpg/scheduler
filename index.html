@@ -294,7 +294,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 <div class="toast" id="toast"></div>
 
 <script>
-const APP_VERSION='v6-20260608-claim-mobile-tasks';
+const APP_VERSION='v7-20260609-explicit-completion-only';
 const STA={pending:'예정',inprog:'진행중',review:'검토중',done:'완료'};
 const PRI={high:'긴급',mid:'보통',low:'여유'};
 
@@ -428,26 +428,19 @@ function hasValue(v){
 function applyCompletionRules(task){
   if(!task)return task;
   var status=String(task.status||'').trim();
-  var doneDate=String(task.donedate||'').trim();
   var progress=parseInt(task.progress);
 
-  // 완료 상태라면 완료일과 진행률도 반드시 완료 기준으로 맞춤
+  // v7 핵심: 완료 여부는 status==='done'만 기준으로 한다.
+  // donedate가 있다고 자동 완료 처리하지 않는다.
   if(status==='done'){
-    if(!doneDate){task.donedate=todayISO();}
-    task.progress=100;
-    return task;
-  }
-
-  // 완료일이 입력되면 현재상태도 자동으로 완료 처리
-  if(doneDate){
-    task.status='done';
+    if(!String(task.donedate||'').trim()){task.donedate=todayISO();}
     task.progress=100;
     return task;
   }
 
   if(!status){task.status='pending';}
   if(isNaN(progress)){task.progress=0;}
-  else{task.progress=Math.max(0,Math.min(100,progress));}
+  else{task.progress=Math.max(0,Math.min(99,progress));}
   return task;
 }
 
@@ -640,6 +633,24 @@ async function claimTask(id){
   }
 }
 
+async function reopenTask(id){
+  const t=tasks.find(x=>x.id===id);
+  if(!t)return;
+  if(!confirm('['+(t.title||'업무')+']를 완료에서 진행중으로 되돌리겠습니까?'))return;
+  let updated=ensureCreatedBy(applyCompletionRules({...t,status:'inprog',progress:Math.min(parseInt(t.progress)||0,99)}));
+  tasks=tasks.map(x=>x.id===id?normalizeClientTask({...updated}):x);
+  render();
+  try{
+    const res=await api({action:'save',actor:MY_NAME,task:updated});
+    if(res&&res.error)throw new Error(res.error);
+    await loadTasks();
+    toast('진행중으로 변경했습니다.');
+  }catch(e){
+    toast('변경 실패: 다시 시도해주세요.',true);
+    await loadTasks();
+  }
+}
+
 async function saveReview(id){
   const t=tasks.find(x=>x.id===id);
   if(!t)return;
@@ -660,17 +671,10 @@ async function saveDonedate(id){
   const t=tasks.find(x=>x.id===id);
   if(!t)return;
   const dd=document.getElementById('dd-'+id)?.value||'';
-  let updated={...t,donedate:dd};
 
-  // 완료일을 저장하면 현재상태도 완료로 변경
-  if(dd){
-    updated.status='done';
-    updated.progress=100;
-  }else if(updated.status==='done'){
-    // 완료일을 지우면 완료 상태를 진행중으로 되돌림
-    updated.status='inprog';
-    updated.progress=Math.min(parseInt(updated.progress)||0,99);
-  }
+  // v7: 완료일 저장은 날짜만 저장한다. 상태는 자동으로 완료 처리하지 않는다.
+  // 완료 처리는 카드의 [완료] 버튼 또는 수정창의 현재상태=완료 선택으로만 실행한다.
+  let updated={...t,donedate:dd};
 
   updated=ensureCreatedBy(applyCompletionRules(updated));
   tasks=tasks.map(x=>x.id===id?normalizeClientTask({...updated}):x);
@@ -679,7 +683,7 @@ async function saveDonedate(id){
     const res=await api({action:'save',actor:MY_NAME,task:updated});
     if(res&&res.error)throw new Error(res.error);
     await loadTasks();
-    toast(dd?'완료일 저장 및 완료 처리했습니다.':'완료일을 삭제하고 진행중으로 변경했습니다.');
+    toast(dd?'완료일만 저장했습니다. 상태는 변경하지 않았습니다.':'완료일을 삭제했습니다. 상태는 변경하지 않았습니다.');
   }catch(e){
     toast('저장 실패: 다시 시도해주세요.',true);
     await loadTasks();
@@ -813,6 +817,7 @@ function cardHTML(t,isMine){
   </div>
   <div class="task-right">
     ${canEdit&&t.status!=='done'?`<button class="qa-btn done-btn" onclick="markDone('${t.id}')">완료</button>`:''}
+    ${canEdit&&t.status==='done'?`<button class="qa-btn" onclick="reopenTask('${t.id}')">진행중으로 변경</button>`:''}
     <i class="ti ti-chevron-down chevron" onclick="toggleCard('${t.id}')"></i>
   </div>
 </div>
