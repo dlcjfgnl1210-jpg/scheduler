@@ -117,6 +117,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .act-btn{font-size:12px;padding:5px 11px;border-radius:var(--radius);border:0.5px solid var(--border2);background:var(--bg);cursor:pointer;display:flex;align-items:center;gap:4px;transition:background .15s}
 .act-btn:hover{background:var(--bg2)}
 .act-btn.danger{color:#993C1D;border-color:#F0997B}.act-btn.danger:hover{background:#FAECE7}
+.act-btn.claim{color:#185FA5;border-color:#B5D4F4;background:#E6F1FB}.act-btn.claim:hover{background:#D8EAFB}
 
 /* SHARED PAGE */
 .shared-note{font-size:13px;color:var(--text2);margin-bottom:14px;padding:10px 14px;background:var(--bg);border-radius:var(--radius);border:0.5px solid var(--border)}
@@ -293,6 +294,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 <div class="toast" id="toast"></div>
 
 <script>
+const APP_VERSION='v6-20260608-claim-mobile-tasks';
 const STA={pending:'예정',inprog:'진행중',review:'검토중',done:'완료'};
 const PRI={high:'긴급',mid:'보통',low:'여유'};
 
@@ -350,11 +352,49 @@ function setSyncState(state){
 // ── API ────────────────────────────────────────────
 function isBadDisplayName(v){
   var s=String(v||'').trim();
-  return !s||s.length>20||/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|\d{4})/i.test(s)||/GMT/.test(s);
+  return !s||s.length>30||/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|\d{4})/i.test(s)||/GMT/i.test(s)||/^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(s)||/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(s);
 }
 
+// 이름 비교용 정규화: 모바일/랩탑에서 공백, 슬래시, 영문 별칭이 달라도 같은 사람으로 판단
+function normalizeNameForMatch(v){
+  return String(v||'')
+    .toLowerCase()
+    .replace(/\s+/g,'')
+    .replace(/[()\[\]{}]/g,'')
+    .replace(/[·•._-]/g,'')
+    .trim();
+}
+
+function nameTokens(v){
+  var raw=String(v||'').trim();
+  if(!raw||isBadDisplayName(raw))return [];
+  var parts=raw.split(/[\/,|;&]+/).map(function(x){return x.trim();}).filter(Boolean);
+  parts.push(raw);
+  var out=[];
+  parts.forEach(function(p){
+    var n=normalizeNameForMatch(p);
+    if(n&&out.indexOf(n)===-1)out.push(n);
+  });
+  return out;
+}
+
+function nameMatches(a,b){
+  var aa=nameTokens(a),bb=nameTokens(b);
+  if(!aa.length||!bb.length)return false;
+  for(var i=0;i<aa.length;i++){
+    for(var j=0;j<bb.length;j++){
+      if(aa[i]===bb[j])return true;
+      // 예: "이유나/GEE" 와 "이유나" 또는 "GEE"를 같은 사람으로 처리
+      if(aa[i].length>=2&&bb[j].indexOf(aa[i])!==-1)return true;
+      if(bb[j].length>=2&&aa[i].indexOf(bb[j])!==-1)return true;
+    }
+  }
+  return false;
+}
+
+// 전체현황 그룹 기준은 작성자가 아니라 실제 담당자: 책임자 > 실무자 > 작성자
 function pickDisplayOwner(t){
-  var candidates=[t&&t.createdBy,t&&t.owner,t&&t.worker];
+  var candidates=[t&&t.owner,t&&t.worker,t&&t.createdBy];
   for(var i=0;i<candidates.length;i++){
     var s=String(candidates[i]||'').trim();
     if(!isBadDisplayName(s))return s;
@@ -362,30 +402,72 @@ function pickDisplayOwner(t){
   return '작성자확인필요';
 }
 
+function isMyTask(t){
+  if(!MY_NAME||isBadDisplayName(MY_NAME))return false;
+  return nameMatches(t&&t.owner,MY_NAME)||nameMatches(t&&t.worker,MY_NAME)||nameMatches(t&&t.createdBy,MY_NAME)||nameMatches(pickDisplayOwner(t),MY_NAME);
+}
+
 function normalizeClientTask(t){
   t=t||{};
-  if(isBadDisplayName(t.createdBy) || String(t.createdBy||'').trim()===String(t.createdAt||'').trim() || String(t.createdBy||'').trim()===String(t.due||'').trim()){
+  if(isBadDisplayName(t.createdBy) || String(t.createdBy||'').trim()===String(t.createdAt||'').trim() || String(t.createdBy||'').trim()===String(t.due||'').trim() || String(t.createdBy||'').trim()===String(t.updatedAt||'').trim()){
     var replacement=pickDisplayOwner({createdBy:'',owner:t.owner,worker:t.worker});
     if(replacement==='작성자확인필요' && MY_NAME && !isBadDisplayName(MY_NAME)) replacement=MY_NAME;
     t.createdBy=replacement;
   }
-  return t;
+  return applyCompletionRules(t);
+}
+
+function todayISO(){
+  return new Date().toISOString().slice(0,10);
+}
+
+function hasValue(v){
+  return String(v==null?'':v).trim()!=='';
+}
+
+function applyCompletionRules(task){
+  if(!task)return task;
+  var status=String(task.status||'').trim();
+  var doneDate=String(task.donedate||'').trim();
+  var progress=parseInt(task.progress);
+
+  // 완료 상태라면 완료일과 진행률도 반드시 완료 기준으로 맞춤
+  if(status==='done'){
+    if(!doneDate){task.donedate=todayISO();}
+    task.progress=100;
+    return task;
+  }
+
+  // 완료일이 입력되면 현재상태도 자동으로 완료 처리
+  if(doneDate){
+    task.status='done';
+    task.progress=100;
+    return task;
+  }
+
+  if(!status){task.status='pending';}
+  if(isNaN(progress)){task.progress=0;}
+  else{task.progress=Math.max(0,Math.min(100,progress));}
+  return task;
 }
 
 // createdBy 보장 함수 - 모든 저장 전 호출
 function ensureCreatedBy(task){
   if(!task)return task;
   var cb=String(task.createdBy||'').trim();
-  // 날짜 형식이면 무효
-  if(!cb||cb.length>20||/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun|Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|\d{4})/i.test(cb)||/GMT/.test(cb)||cb===String(task.createdAt||'').trim()||cb===String(task.due||'').trim()){
+  // 날짜/GMT/마감일 복사값이면 무효. 새 저장은 반드시 현재 로그인 이름을 우선 적용
+  if(isBadDisplayName(cb)||cb===String(task.createdAt||'').trim()||cb===String(task.due||'').trim()||cb===String(task.updatedAt||'').trim()){
     task.createdBy=MY_NAME||task.owner||task.worker||'작성자확인필요';
   }
+  // 신규 업무에서 담당자 미입력 시 모바일/랩탑 모두 내 업무로 잡히도록 기본값 보정
+  if(!String(task.owner||'').trim() && MY_NAME) task.owner=MY_NAME;
+  if(!String(task.worker||'').trim() && MY_NAME) task.worker=MY_NAME;
   // createdAt도 날짜 객체면 변환
   var ca=String(task.createdAt||'').trim();
-  if(!ca||ca.length>10||/GMT/.test(ca)){
+  if(!ca||ca.length>10||/GMT/i.test(ca)){
     task.createdAt=new Date().toISOString().slice(0,10);
   }
-  return task;
+  return applyCompletionRules(task);
 }
 
 async function api(params){
@@ -475,7 +557,7 @@ async function saveTask(){
   };
   // 마지막 보험: createdBy 절대 비우지 않음
   if(!t.createdBy||t.createdBy.trim()==='')t.createdBy=MY_NAME;
-  t=ensureCreatedBy(t);
+  t=ensureCreatedBy(applyCompletionRules(t));
   try{
     await api({action:'save',actor:MY_NAME,task:t});
     closeModal();
@@ -492,13 +574,70 @@ async function saveTask(){
 async function markDone(id){
   const t=tasks.find(x=>x.id===id);
   if(!t)return;
-  const today=new Date().toISOString().slice(0,10);
-  const updated=ensureCreatedBy({...t,status:'done',progress:100,donedate:t.donedate||today});
+  const updated=ensureCreatedBy(applyCompletionRules({...t,status:'done',progress:100,donedate:t.donedate||todayISO()}));
+  // 화면을 먼저 바꿔서 사용자가 즉시 상태 변화를 볼 수 있게 함
+  tasks=tasks.map(x=>x.id===id?normalizeClientTask({...updated}):x);
+  render();
   try{
-    await api({action:'save',actor:MY_NAME,task:updated});
+    const res=await api({action:'save',actor:MY_NAME,task:updated});
+    if(res&&res.error)throw new Error(res.error);
     await loadTasks();
     toast('완료 처리했습니다.');
-  }catch(e){toast('처리 실패',true)}
+  }catch(e){
+    toast('처리 실패: 다시 시도해주세요.',true);
+    await loadTasks();
+  }
+}
+
+
+async function claimTask(id){
+  if(!MY_NAME||MY_NAME.trim()===''){
+    alert('이름 설정이 필요합니다. 설정(⚙️)에서 현재 사용자 이름을 먼저 입력해주세요.');
+    return;
+  }
+  const t=tasks.find(x=>String(x.id)===String(id));
+  if(!t)return;
+  if(!confirm('['+(t.title||'업무')+']를 내 업무로 가져오겠습니까?\n\n기존 업무 내용은 유지하고, 현재 사용자를 실무자에 추가합니다.'))return;
+
+  // 화면 즉시 반영: 기존 책임자는 보존하고, 실무자에 현재 사용자를 추가한다.
+  const workerText=String(t.worker||'').trim();
+  let nextWorker=workerText;
+  if(!workerText||isBadDisplayName(workerText)){
+    nextWorker=MY_NAME;
+  }else if(!nameMatches(workerText,MY_NAME)){
+    nextWorker=workerText+' / '+MY_NAME;
+  }
+
+  const updated=ensureCreatedBy(applyCompletionRules({
+    ...t,
+    worker:nextWorker,
+    // createdBy가 날짜/GMT 등으로 오염된 경우만 현재 사용자로 보정한다.
+    createdBy:(isBadDisplayName(t.createdBy)||String(t.createdBy||'').trim()===String(t.due||'').trim()||String(t.createdBy||'').trim()===String(t.createdAt||'').trim())?MY_NAME:t.createdBy
+  }));
+
+  tasks=tasks.map(x=>String(x.id)===String(id)?normalizeClientTask({...updated}):x);
+  render();
+
+  try{
+    const res=await api({action:'claim',id:id,actor:MY_NAME});
+    if(res&&res.error)throw new Error(res.error);
+    await loadTasks();
+    showPage('mine');
+    toast('내 업무로 가져왔습니다.');
+  }catch(e){
+    console.error(e);
+    // 구버전 Apps Script에 claim action이 아직 없을 때의 fallback
+    try{
+      const res2=await api({action:'save',actor:MY_NAME,task:updated});
+      if(res2&&res2.error)throw new Error(res2.error);
+      await loadTasks();
+      showPage('mine');
+      toast('내 업무로 가져왔습니다.');
+    }catch(e2){
+      toast('가져오기 실패: Apps Script v6 배포 여부를 확인해주세요.',true);
+      await loadTasks();
+    }
+  }
 }
 
 async function saveReview(id){
@@ -521,9 +660,30 @@ async function saveDonedate(id){
   const t=tasks.find(x=>x.id===id);
   if(!t)return;
   const dd=document.getElementById('dd-'+id)?.value||'';
-  const updated=ensureCreatedBy({...t,donedate:dd});
-  try{await api({action:'save',actor:MY_NAME,task:updated});await loadTasks();toast('완료일이 저장되었습니다.');}
-  catch(e){toast('저장 실패',true)}
+  let updated={...t,donedate:dd};
+
+  // 완료일을 저장하면 현재상태도 완료로 변경
+  if(dd){
+    updated.status='done';
+    updated.progress=100;
+  }else if(updated.status==='done'){
+    // 완료일을 지우면 완료 상태를 진행중으로 되돌림
+    updated.status='inprog';
+    updated.progress=Math.min(parseInt(updated.progress)||0,99);
+  }
+
+  updated=ensureCreatedBy(applyCompletionRules(updated));
+  tasks=tasks.map(x=>x.id===id?normalizeClientTask({...updated}):x);
+  render();
+  try{
+    const res=await api({action:'save',actor:MY_NAME,task:updated});
+    if(res&&res.error)throw new Error(res.error);
+    await loadTasks();
+    toast(dd?'완료일 저장 및 완료 처리했습니다.':'완료일을 삭제하고 진행중으로 변경했습니다.');
+  }catch(e){
+    toast('저장 실패: 다시 시도해주세요.',true);
+    await loadTasks();
+  }
 }
 
 async function deleteTask(id){
@@ -574,7 +734,11 @@ function openModal(id=null){
   document.getElementById('modal-title').textContent=id?'업무 수정':'새 업무 추가';
   const txtFields=['title','owner','worker','due','donedate','action','next','hq','result','review'];
   const existing=id?tasks.find(x=>x.id===id):null;
-  txtFields.forEach(f=>document.getElementById('f-'+f).value=existing?existing[f]||'':'');
+  txtFields.forEach(function(f){
+    var val=existing?existing[f]||'':'';
+    if(!existing&&(f==='owner'||f==='worker')) val=MY_NAME||'';
+    document.getElementById('f-'+f).value=val;
+  });
   document.getElementById('f-cat').value=existing?existing.cat||'':'';
   document.getElementById('f-priority').value=existing?existing.priority||'mid':'mid';
   document.getElementById('f-status').value=existing?existing.status||'pending':'pending';
@@ -627,7 +791,8 @@ function cardHTML(t,isMine){
   const sc={done:'s-done',inprog:'s-inprog',pending:'s-pending',review:'s-review'}[t.status]||'s-pending';
   const prog=Math.min(100,Math.max(0,parseInt(t.progress)||0));
   const progColor=prog>=80?'#639922':prog>=40?'#BA7517':'#185FA5';
-  const canEdit=isMine&&t.createdBy===MY_NAME;
+  const mineFlag=isMyTask(t);
+  const canEdit=isMine&&mineFlag;
 
   return`<div class="task-card" id="card-${t.id}">
 <div class="task-head">
@@ -638,7 +803,7 @@ function cardHTML(t,isMine){
       ${t.cat?`<span class="badge">${t.cat}</span>`:''}
       <span class="badge ${sc}">${STA[t.status]||t.status}</span>
       ${t.owner?`<span class="badge" style="background:transparent;color:var(--text2)"><i class="ti ti-user" style="font-size:10px"></i> ${t.owner}</span>`:''}
-      ${!isMine&&!isBadDisplayName(t.createdBy)?`<span class="badge" style="background:#EEEDFE;color:#534AB7">${t.createdBy}</span>`:''}
+      ${!isMine&&!isBadDisplayName(t.createdBy)&&!nameMatches(t.createdBy,t.owner)&&!nameMatches(t.createdBy,t.worker)?`<span class="badge" style="background:#EEEDFE;color:#534AB7">${t.createdBy}</span>`:''}
     </div>
     <div class="task-info-row">
       ${t.action?`<span class="task-plan-preview"><i class="ti ti-file-text" style="font-size:11px;vertical-align:-1px"></i> ${t.action.replace(/\n/g,' ').slice(0,60)}${t.action.length>60?'…':''}</span>`:''}
@@ -678,7 +843,8 @@ function cardHTML(t,isMine){
     ${canEdit?`<div class="review-edit-row"><textarea id="rv-${t.id}" placeholder="개선점을 입력하세요...">${t.review||''}</textarea><button class="review-save-btn" onclick="saveReview('${t.id}')">저장</button></div>`:''}
   </div>
   <div class="card-acts">
-    <button class="act-btn danger" onclick="deleteTask('${t.id}')"><i class="ti ti-trash"></i> 삭제</button>
+    ${!mineFlag&&MY_NAME?`<button class="act-btn claim" onclick="claimTask('${t.id}')"><i class="ti ti-user-plus"></i> 내 업무로 가져오기</button>`:''}
+    ${canEdit?`<button class="act-btn danger" onclick="deleteTask('${t.id}')"><i class="ti ti-trash"></i> 삭제</button>`:''}
     ${canEdit?`<button class="act-btn" onclick="openModal('${t.id}')"><i class="ti ti-edit"></i> 수정</button>`:''}
   </div>
 </div>
@@ -692,7 +858,7 @@ function render(){
 }
 
 function renderMine(){
-  const mine=tasks.filter(function(t){return t.createdBy===MY_NAME || pickDisplayOwner(t)===MY_NAME;});
+  const mine=tasks.filter(isMyTask);
   mine.sort(function(a,b){
     const da=a.status==='done',db=b.status==='done';
     if(da&&!db)return 1;if(!da&&db)return -1;

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'megagen-scheduler-v3-20260603';
+const CACHE_NAME = 'megagen-scheduler-v6-20260608-claim-mobile-tasks';
 const ASSETS = [
   './',
   './index.html',
