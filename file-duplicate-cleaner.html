@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>파일 묶음 정리기</title>
+<style>
+  :root{
+    --ink:#1b1a17;
+    --paper:#f3efe6;
+    --paper-2:#ebe5d8;
+    --line:#cfc7b5;
+    --amber:#c2611f;
+    --amber-soft:#e8a35c;
+    --moss:#4a6b3f;
+    --slate:#5a5246;
+    --danger:#a3341f;
+    --shadow:0 1px 0 rgba(0,0,0,.04);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1040px;margin:0 auto;padding:28px 20px 80px;}
+
+  /* Header */
+  header{
+    border-bottom:2px solid var(--ink);
+    padding-bottom:18px;margin-bottom:24px;
+  }
+  .eyebrow{
+    font-size:11px;letter-spacing:.22em;text-transform:uppercase;
+    color:var(--slate);font-weight:700;margin-bottom:8px;
+  }
+  h1{
+    font-family:"Iowan Old Style","Palatino Linotype",Georgia,"Apple SD Gothic Neo",serif;
+    font-size:34px;line-height:1.1;margin:0;font-weight:600;letter-spacing:-.01em;
+  }
+  h1 .num{color:var(--amber);font-variant-numeric:tabular-nums;}
+  .sub{color:var(--slate);font-size:14px;margin-top:10px;max-width:62ch;}
+
+  /* Controls */
+  .controls{
+    display:flex;flex-wrap:wrap;gap:10px;align-items:center;
+    margin:22px 0 8px;
+  }
+  button{
+    font-family:inherit;font-size:14px;cursor:pointer;
+    border:1.5px solid var(--ink);background:var(--paper);color:var(--ink);
+    padding:9px 16px;border-radius:2px;font-weight:600;
+    transition:background .12s,color .12s,transform .04s;
+  }
+  button:hover{background:var(--ink);color:var(--paper);}
+  button:active{transform:translateY(1px);}
+  button:disabled{opacity:.4;cursor:not-allowed;}
+  button.primary{background:var(--amber);border-color:var(--amber);color:#fff;}
+  button.primary:hover{background:#a4521a;border-color:#a4521a;}
+  button.danger{border-color:var(--danger);color:var(--danger);}
+  button.danger:hover{background:var(--danger);color:#fff;}
+  button.ghost{border-color:var(--line);color:var(--slate);font-weight:500;}
+  button.ghost:hover{background:var(--paper-2);color:var(--ink);border-color:var(--line);}
+
+  .mode-note{
+    font-size:12.5px;color:var(--slate);margin-top:4px;
+    padding:10px 14px;border-left:3px solid var(--amber-soft);background:var(--paper-2);
+    border-radius:0 2px 2px 0;
+  }
+  .mode-note b{color:var(--ink);}
+
+  /* drop zone */
+  .drop{
+    margin-top:20px;border:2px dashed var(--line);border-radius:4px;
+    padding:34px 20px;text-align:center;color:var(--slate);
+    background:var(--paper-2);transition:border-color .15s,background .15s;
+  }
+  .drop.hot{border-color:var(--amber);background:#f0e3d2;color:var(--ink);}
+  .drop strong{color:var(--ink);}
+
+  /* summary bar */
+  .summary{
+    display:none;margin:24px 0 6px;padding:14px 18px;
+    background:var(--ink);color:var(--paper);border-radius:3px;
+    display:flex;flex-wrap:wrap;gap:18px 28px;align-items:baseline;
+  }
+  .summary.show{display:flex;}
+  .stat{display:flex;flex-direction:column;gap:2px;}
+  .stat .v{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1;}
+  .stat .v.warn{color:var(--amber-soft);}
+  .stat .k{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;opacity:.7;}
+  .spacer{flex:1;}
+
+  .toolbar{
+    display:none;gap:10px;flex-wrap:wrap;align-items:center;margin:18px 0 4px;
+  }
+  .toolbar.show{display:flex;}
+  .filter{
+    display:flex;gap:0;border:1.5px solid var(--line);border-radius:2px;overflow:hidden;
+  }
+  .filter button{border:none;border-radius:0;background:var(--paper);padding:7px 13px;font-weight:500;}
+  .filter button.on{background:var(--moss);color:#fff;}
+  .filter button:not(.on):hover{background:var(--paper-2);color:var(--ink);}
+
+  /* groups */
+  .groups{margin-top:14px;display:flex;flex-direction:column;gap:14px;}
+  .group{
+    border:1px solid var(--line);border-radius:4px;background:#faf7f0;
+    overflow:hidden;box-shadow:var(--shadow);
+  }
+  .ghead{
+    display:flex;align-items:center;gap:12px;padding:12px 16px;
+    background:var(--paper-2);border-bottom:1px solid var(--line);cursor:pointer;
+  }
+  .ghead .badge{
+    font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+    padding:3px 8px;border-radius:2px;white-space:nowrap;
+  }
+  .badge.exact{background:#3a2a16;color:#f1c98a;}
+  .badge.pattern{background:#23331c;color:#a9c79a;}
+  .badge.code{background:#2a2233;color:#cdb3e8;}
+  .badge.random{background:#33211f;color:#e8a99a;}
+
+  .search{
+    font-family:inherit;font-size:14px;
+    border:1.5px solid var(--line);background:#faf7f0;color:var(--ink);
+    padding:8px 13px;border-radius:2px;min-width:240px;flex:1;max-width:340px;
+  }
+  .search:focus{outline:none;border-color:var(--amber);}
+  mark{background:#f4d58a;color:var(--ink);border-radius:1px;padding:0 1px;}
+  .gtitle{font-weight:700;font-size:15px;flex:1;min-width:0;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .gtitle .pat{color:var(--amber);font-family:"SF Mono",Menlo,Consolas,monospace;font-size:13px;}
+  .gmeta{font-size:12px;color:var(--slate);white-space:nowrap;font-variant-numeric:tabular-nums;}
+  .chev{transition:transform .15s;color:var(--slate);}
+  .group.collapsed .chev{transform:rotate(-90deg);}
+  .group.collapsed .glist{display:none;}
+
+  .glist{list-style:none;margin:0;padding:0;}
+  .row{
+    display:flex;align-items:center;gap:12px;padding:10px 16px;
+    border-top:1px solid #ece6d8;font-size:13.5px;
+  }
+  .row:first-child{border-top:none;}
+  .row.keep{background:#eef3e9;}
+  .row input[type=checkbox]{
+    width:17px;height:17px;accent-color:var(--danger);flex:none;cursor:pointer;
+  }
+  .fname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:"SF Mono",Menlo,Consolas,monospace;font-size:12.5px;}
+  .fpath{color:var(--slate);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:260px;flex:none;}
+  .fsize{color:var(--slate);font-variant-numeric:tabular-nums;font-size:12px;white-space:nowrap;flex:none;}
+  .keeptag{
+    font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--moss);border:1px solid var(--moss);border-radius:2px;padding:1px 6px;flex:none;
+  }
+
+  /* action bar (sticky) */
+  .actionbar{
+    position:sticky;bottom:0;margin-top:24px;
+    display:none;align-items:center;gap:14px;flex-wrap:wrap;
+    background:var(--paper);border-top:2px solid var(--ink);
+    padding:14px 4px;
+  }
+  .actionbar.show{display:flex;}
+  .selcount{font-weight:700;font-variant-numeric:tabular-nums;}
+  .selcount .danger-ink{color:var(--danger);}
+
+  .empty{
+    text-align:center;color:var(--slate);padding:50px 20px;font-size:14px;
+  }
+  .empty .big{font-family:Georgia,serif;font-size:18px;color:var(--ink);margin-bottom:6px;}
+
+  footer{margin-top:50px;padding-top:16px;border-top:1px solid var(--line);
+    font-size:11.5px;color:var(--slate);line-height:1.7;}
+  code{background:var(--paper-2);padding:1px 5px;border-radius:2px;font-size:11.5px;}
+
+  @media (max-width:640px){
+    h1{font-size:26px;}
+    .fpath{display:none;}
+    .row{flex-wrap:wrap;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="eyebrow">로컬 파일 · 중복 묶음 정리</div>
+    <h1>쌓인 파일, <span class="num">묶어서</span> 비우기</h1>
+    <p class="sub">같은 이름·닮은 패턴은 물론, ERP가 만든 무작위 코드 파일(<code style="font-size:11px">a5JxtdWVt4iaEAoZ.xlsx</code> 같은)까지 찾아 묶습니다. 같은 코드를 공유하면 뒤 꼬리(<code style="font-size:11px">_분석완료</code>)가 달라도 한 묶음으로 모읍니다. 분석은 전부 이 브라우저 안에서만 일어나며, 파일은 어디로도 전송되지 않습니다.</p>
+  </header>
+
+  <div class="controls">
+    <button class="primary" id="btnFolder">폴더 선택해서 스캔</button>
+    <button id="btnFiles">파일 직접 고르기</button>
+    <button class="ghost" id="btnReset" disabled>초기화</button>
+  </div>
+  <div class="mode-note" id="modeNote">브라우저 확인 중…</div>
+
+  <div class="drop" id="drop">
+    여기로 <strong>폴더나 파일을 끌어다 놓아도</strong> 됩니다.
+  </div>
+
+  <div class="summary" id="summary">
+    <div class="stat"><span class="v" id="sFiles">0</span><span class="k">전체 파일</span></div>
+    <div class="stat"><span class="v warn" id="sGroups">0</span><span class="k">중복 묶음</span></div>
+    <div class="stat"><span class="v warn" id="sDup">0</span><span class="k">정리 후보</span></div>
+    <div class="stat"><span class="v" id="sSpace">0</span><span class="k">묶음 내 용량</span></div>
+    <div class="spacer"></div>
+    <div class="stat"><span class="v" id="sMode" style="font-size:13px;font-weight:600;">—</span><span class="k">모드</span></div>
+  </div>
+
+  <div class="toolbar" id="toolbar">
+    <input type="text" id="search" class="search" placeholder="단어·코드 검색 (예: 손익계산, D6U157, 분석완료)">
+    <div class="filter" id="filter">
+      <button data-f="all" class="on">전체</button>
+      <button data-f="exact">이름 동일</button>
+      <button data-f="pattern">패턴 동일</button>
+      <button data-f="code">같은 코드</button>
+      <button data-f="random">ERP 무작위</button>
+    </div>
+    <button class="ghost" id="btnAutoSelect">묶음마다 1개만 남기고 선택</button>
+    <button class="ghost" id="btnClearSel">선택 해제</button>
+    <button class="ghost" id="btnExpand">모두 펼치기</button>
+  </div>
+
+  <div class="groups" id="groups"></div>
+
+  <div class="empty" id="empty">
+    <div class="big">아직 불러온 파일이 없어요</div>
+    위에서 폴더를 선택하면 닮은 파일들을 묶어 보여드립니다.
+  </div>
+
+  <div class="actionbar" id="actionbar">
+    <span class="selcount"><span class="danger-ink" id="selN">0</span>개 선택됨 · <span id="selSize">0</span></span>
+    <div class="spacer" style="flex:1;"></div>
+    <button class="ghost" id="btnScript">삭제 스크립트 내려받기</button>
+    <button class="danger" id="btnDelete">선택 파일 휴지통으로</button>
+  </div>
+
+  <footer>
+    <b>두 가지 동작 방식</b><br>
+    • <b>크롬 / 엣지</b> — “폴더 선택해서 스캔”을 쓰면 폴더 안을 직접 읽고, 고른 파일을 <b>휴지통으로 바로 이동</b>합니다.<br>
+    • <b>사파리 / 파이어폭스</b> — 폴더 직접 삭제는 브라우저가 막아 둡니다. 대신 파일을 분석해 묶어 주고, “삭제 스크립트 내려받기”로 <code>.command</code>(맥) 또는 <code>.bat</code>(윈도우) 파일을 만들어 드립니다. 그 파일을 더블클릭하면 정리됩니다.<br>
+    모든 처리는 이 페이지 안에서만 이루어지고 외부로 나가지 않습니다.
+  </footer>
+</div>
+
+<script>
+"use strict";
+(function(){
+  var supportsFS = (typeof window.showDirectoryPicker === "function");
+  var dirHandle = null;            // 크롬 폴더 핸들
+  var allFiles = [];               // {name, size, path, file, handle, parentHandle, plat}
+  var groups = [];                 // {type, key, label, items:[fileIdx...]}
+  var selected = {};               // path -> true
+  var curFilter = "all";
+
+  var $ = function(id){ return document.getElementById(id); };
+
+  /* ---------- 모드 안내 ---------- */
+  function setMode(){
+    if(supportsFS){
+      $("modeNote").innerHTML = "<b>크롬/엣지 모드</b> · 폴더를 직접 읽고 선택 파일을 휴지통으로 바로 이동할 수 있어요. (사파리라면 ‘파일 직접 고르기’로 분석만 됩니다)";
+      $("sMode").textContent = "직접 삭제";
+    } else {
+      $("modeNote").innerHTML = "<b>사파리/파이어폭스 모드</b> · 폴더 직접 삭제는 브라우저가 막아 둡니다. 파일을 골라 분석한 뒤, 삭제 스크립트를 내려받아 더블클릭하세요.";
+      $("btnFolder").disabled = true;
+      $("btnFolder").title = "이 브라우저는 폴더 직접 접근을 지원하지 않습니다. 크롬을 쓰거나 ‘파일 직접 고르기’를 이용하세요.";
+      $("sMode").textContent = "스크립트";
+    }
+  }
+
+  /* ---------- 유틸 ---------- */
+  function fmtSize(b){
+    if(b===0||b==null) return "0 B";
+    var u=["B","KB","MB","GB","TB"],i=Math.floor(Math.log(b)/Math.log(1024));
+    return (b/Math.pow(1024,i)).toFixed(i?1:0)+" "+u[i];
+  }
+  function detectPlat(path){
+    return (path && path.indexOf("\\")>-1) ? "win" : "mac";
+  }
+  // 이름 패턴 정규화: 확장자 분리 후, 복사본/(1)/_v2/-copy 등 흔한 중복 꼬리 제거
+  function patternKey(name){
+    var dot=name.lastIndexOf(".");
+    var base=(dot>0?name.slice(0,dot):name);
+    var ext=(dot>0?name.slice(dot).toLowerCase():"");
+    var b=base;
+    b=b.replace(/\s*\((\d+)\)\s*$/i,"");                 // (1) (2)
+    b=b.replace(/[\s_\-]*복사본(\s*\d*)?\s*$/i,"");       // 복사본, 복사본 2
+    b=b.replace(/[\s_\-]*copy(\s*\d*)?\s*$/i,"");         // copy, copy 2, -copy
+    b=b.replace(/[\s_\-]*(of\s+)?\d+\s*$/i,"");           // 끝의 숫자/of 2
+    b=b.replace(/[\s_\-]*v\d+\s*$/i,"");                  // _v2 v3
+    b=b.replace(/[\s_\-]*(final|최종|수정|복사|사본|new|old)\s*\d*$/i,"");
+    b=b.replace(/[\s_\-]+$/,"").trim();
+    return b.toLowerCase()+"|"+ext;
+  }
+  function lowerName(name){ return name.toLowerCase(); }
+
+  // 확장자 제외한 base 이름
+  function baseName(name){
+    var dot=name.lastIndexOf(".");
+    return dot>0?name.slice(0,dot):name;
+  }
+  function extOf(name){
+    var dot=name.lastIndexOf(".");
+    return dot>0?name.slice(dot).toLowerCase():"";
+  }
+
+  // 문자열 토큰이 'ERP 무작위 코드'처럼 보이는지 판정.
+  // 기준: 길이 10+, 영문/숫자로만 구성, 대문자·소문자·숫자 중 2종 이상 혼합,
+  //       모음 비율이 낮음(발음 가능한 단어가 아님) 또는 대소문자 전환이 잦음.
+  function looksRandom(tok){
+    if(!tok || tok.length<10) return false;
+    if(!/^[A-Za-z0-9]+$/.test(tok)) return false;
+    var hasUp=/[A-Z]/.test(tok), hasLo=/[a-z]/.test(tok), hasNum=/[0-9]/.test(tok);
+    var kinds=(hasUp?1:0)+(hasLo?1:0)+(hasNum?1:0);
+    var letters=tok.replace(/[0-9]/g,"");
+    var vowels=(letters.match(/[aeiouAEIOU]/g)||[]).length;
+    var vowelRatio=letters.length?vowels/letters.length:1;
+    // 대소문자 전환 횟수 (camel/random 특징)
+    var switches=0;
+    for(var i=1;i<tok.length;i++){
+      var a=tok[i-1],b=tok[i];
+      if(/[A-Z]/.test(a)!==/[A-Z]/.test(b) && /[A-Za-z]/.test(a) && /[A-Za-z]/.test(b)) switches++;
+    }
+    // 무작위 판정: (대소문자+숫자 혼합) 그리고 (모음이 적거나 전환이 잦음)
+    var lowVowel = vowelRatio<0.30;
+    var manySwitch = switches>=3;
+    return kinds>=2 && (lowVowel || manySwitch);
+  }
+
+  // 이름에서 'ERP 코드'로 보이는 가장 긴 토큰을 추출 (없으면 null)
+  function extractCode(name){
+    var base=baseName(name);
+    // 구분자로 토큰 분리
+    var toks=base.split(/[\s_\-.()]+/).filter(Boolean);
+    var best=null;
+    toks.forEach(function(t){
+      if(looksRandom(t)){
+        if(!best || t.length>best.length) best=t;
+      }
+    });
+    return best;
+  }
+
+  /* ---------- 그룹화 ---------- */
+  function buildGroups(){
+    groups=[];
+    var byName={}, byPat={}, byCode={};
+    var inExact={}, inCode={};
+
+    // 1) 이름 완전 동일
+    allFiles.forEach(function(f,idx){
+      var nk=lowerName(f.name);
+      (byName[nk]=byName[nk]||[]).push(idx);
+    });
+    Object.keys(byName).forEach(function(k){
+      if(byName[k].length>1){
+        byName[k].forEach(function(i){ inExact[i]=true; });
+        groups.push({type:"exact",key:k,label:allFiles[byName[k][0]].name,items:byName[k].slice()});
+      }
+    });
+
+    // 2) 같은 ERP 코드 공유 (이름 동일로 이미 묶인 건 제외)
+    allFiles.forEach(function(f,idx){
+      if(inExact[idx]) return;
+      var code=extractCode(f.name);
+      if(code){
+        f._code=code;
+        var ck=code.toLowerCase()+"|"+extOf(f.name);
+        (byCode[ck]=byCode[ck]||[]).push(idx);
+      }
+    });
+    Object.keys(byCode).forEach(function(k){
+      if(byCode[k].length>1){
+        byCode[k].forEach(function(i){ inCode[i]=true; });
+        var code=allFiles[byCode[k][0]]._code;
+        groups.push({type:"code",key:k,label:code,items:byCode[k].slice()});
+      }
+    });
+
+    // 3) 이름 패턴 동일 (복사본/(1)/_v2 등) — 위 두 그룹에 안 들어간 것만
+    allFiles.forEach(function(f,idx){
+      if(inExact[idx]||inCode[idx]) return;
+      var pk=patternKey(f.name);
+      (byPat[pk]=byPat[pk]||[]).push(idx);
+    });
+    Object.keys(byPat).forEach(function(k){
+      if(byPat[k].length>1){
+        var label=k.split("|")[0];
+        groups.push({type:"pattern",key:k,label:label,items:byPat[k].slice()});
+      }
+    });
+
+    // 4) 'ERP 무작위' 표시용 가상 묶음 — 코드로 안 묶였어도 랜덤 이름인 단독 파일 모음
+    var randomSingles=[];
+    allFiles.forEach(function(f,idx){
+      if(inExact[idx]||inCode[idx]) return;
+      var code=extractCode(f.name);
+      // 이름의 base 전체가 사실상 랜덤 코드인 경우 (사람 이름 파일 제외)
+      if(code && code.length>=baseName(f.name).replace(/[\s_\-.()]+/g,"").length*0.7){
+        f._code=code;
+        randomSingles.push(idx);
+      }
+    });
+    if(randomSingles.length){
+      groups.push({type:"random",key:"__random__",label:"개별 무작위 이름 파일",items:randomSingles,single:true});
+    }
+
+    // 정렬: 정리 후보 많은 순, 단 random 가상묶음은 맨 뒤
+    groups.sort(function(a,b){
+      if(a.single&&!b.single) return 1;
+      if(b.single&&!a.single) return -1;
+      return b.items.length-a.items.length;
+    });
+  }
+
+  /* ---------- 렌더 ---------- */
+  function dupCount(){ var n=0; groups.forEach(function(g){ n+=g.items.length-1; }); return n; }
+  function groupSpace(){
+    var s=0; groups.forEach(function(g){ g.items.forEach(function(i){ s+=allFiles[i].size||0; }); }); return s;
+  }
+  function matchSearch(f,g,q){
+    if(!q) return true;
+    if(f.name.toLowerCase().indexOf(q)>-1) return true;
+    if(f.path && f.path.toLowerCase().indexOf(q)>-1) return true;
+    if(g.label && String(g.label).toLowerCase().indexOf(q)>-1) return true;
+    if(f._code && f._code.toLowerCase().indexOf(q)>-1) return true;
+    return false;
+  }
+  function highlight(text,q){
+    var safe=escapeHtml(text);
+    if(!q) return safe;
+    var idx=text.toLowerCase().indexOf(q);
+    if(idx<0) return safe;
+    return escapeHtml(text.slice(0,idx))+"<mark>"+escapeHtml(text.slice(idx,idx+q.length))+"</mark>"+escapeHtml(text.slice(idx+q.length));
+  }
+
+  var BADGE={exact:"이름 동일",pattern:"패턴 동일",code:"같은 코드",random:"ERP 무작위"};
+
+  function render(){
+    var box=$("groups"); box.innerHTML="";
+    var q=($("search").value||"").trim().toLowerCase();
+    var shown=groups.filter(function(g){ return curFilter==="all"||g.type===curFilter; });
+    if(!allFiles.length){ $("empty").style.display="block"; }
+    else { $("empty").style.display="none"; }
+
+    var anyRow=false;
+
+    shown.forEach(function(g){
+      // 검색 시: 매칭되는 항목만, 매칭 없으면 그룹 숨김
+      var items=g.items.filter(function(idx){ return matchSearch(allFiles[idx],g,q); });
+      if(q && !items.length) return;
+      if(!q) items=g.items.slice();
+      anyRow=true;
+
+      var el=document.createElement("div"); el.className="group";
+      var totalSize=0; items.forEach(function(i){ totalSize+=allFiles[i].size||0; });
+      var head=document.createElement("div"); head.className="ghead";
+      var titleHtml = g.type==="code"
+          ? '<span class="pat">'+escapeHtml(g.label)+'</span> <span style="color:var(--slate);font-weight:400;font-size:13px;">공통 코드</span>'
+          : g.type==="pattern" ? '<span class="pat">'+escapeHtml(g.label)+'…</span>'
+          : g.type==="random" ? '<span style="color:var(--slate);">개별 무작위 이름 파일</span>'
+          : escapeHtml(g.label);
+      head.innerHTML =
+        '<span class="chev">▾</span>'+
+        '<span class="badge '+g.type+'">'+BADGE[g.type]+'</span>'+
+        '<span class="gtitle">'+titleHtml+'</span>'+
+        '<span class="gmeta">'+items.length+'개 · '+fmtSize(totalSize)+'</span>';
+      head.addEventListener("click",function(){ el.classList.toggle("collapsed"); });
+      el.appendChild(head);
+
+      var ul=document.createElement("ul"); ul.className="glist";
+      var recommendKeep = !g.single; // 무작위 단독묶음은 '남김 추천' 없음(서로 다른 파일이므로)
+      items.forEach(function(idx,pos){
+        var f=allFiles[idx];
+        var li=document.createElement("li"); li.className="row";
+        var isSel=!!selected[f.path];
+        if(recommendKeep && !isSel && pos===0){ li.classList.add("keep"); }
+        var cb=document.createElement("input"); cb.type="checkbox"; cb.checked=isSel;
+        cb.addEventListener("change",function(){
+          if(cb.checked) selected[f.path]=true; else delete selected[f.path];
+          updateBars();
+        });
+        li.appendChild(cb);
+        var nm=document.createElement("span"); nm.className="fname"; nm.innerHTML=highlight(f.name,q); li.appendChild(nm);
+        if(f.path && f.path!==f.name){
+          var pa=document.createElement("span"); pa.className="fpath"; pa.textContent=f.path; pa.title=f.path; li.appendChild(pa);
+        }
+        var sz=document.createElement("span"); sz.className="fsize"; sz.textContent=fmtSize(f.size); li.appendChild(sz);
+        if(recommendKeep && !isSel && pos===0){
+          var kt=document.createElement("span"); kt.className="keeptag"; kt.textContent="남김 추천"; li.appendChild(kt);
+        }
+        ul.appendChild(li);
+      });
+      el.appendChild(ul);
+      box.appendChild(el);
+    });
+
+    if(allFiles.length && !anyRow){
+      box.innerHTML = q
+        ? '<div class="empty"><div class="big">검색 결과가 없어요</div>“'+escapeHtml(q)+'”와 닮은 파일을 찾지 못했습니다.</div>'
+        : '<div class="empty"><div class="big">중복 묶음이 없어요</div>닮은 이름의 파일을 찾지 못했습니다. 깔끔하네요.</div>';
+    }
+    updateBars();
+  }
+
+  function escapeHtml(s){ return String(s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];}); }
+
+  function updateBars(){
+    $("sFiles").textContent=allFiles.length;
+    $("sGroups").textContent=groups.length;
+    $("sDup").textContent=dupCount();
+    $("sSpace").textContent=fmtSize(groupSpace());
+    $("summary").classList.toggle("show",allFiles.length>0);
+    $("toolbar").classList.toggle("show",groups.length>0);
+
+    var keys=Object.keys(selected), n=keys.length, sz=0;
+    var pathToFile={}; allFiles.forEach(function(f){ pathToFile[f.path]=f; });
+    keys.forEach(function(p){ if(pathToFile[p]) sz+=pathToFile[p].size||0; });
+    $("selN").textContent=n; $("selSize").textContent=fmtSize(sz);
+    $("actionbar").classList.toggle("show",n>0);
+    $("btnReset").disabled=allFiles.length===0;
+  }
+
+  /* ---------- 입력: 크롬 폴더 ---------- */
+  $("btnFolder").addEventListener("click",async function(){
+    if(!supportsFS) return;
+    try{
+      dirHandle=await window.showDirectoryPicker();
+      allFiles=[]; selected={};
+      await walkDir(dirHandle,"");
+      finishLoad();
+    }catch(e){ if(e && e.name!=="AbortError") alert("폴더를 읽지 못했습니다: "+e.message); }
+  });
+  async function walkDir(handle,prefix){
+    for await (var entry of handle.values()){
+      if(entry.kind==="file"){
+        try{
+          var file=await entry.getFile();
+          var path=(prefix?prefix+"/":"")+entry.name;
+          allFiles.push({name:entry.name,size:file.size,path:path,file:file,handle:entry,parentHandle:handle,plat:"mac"});
+        }catch(e){}
+      } else if(entry.kind==="directory"){
+        await walkDir(entry,(prefix?prefix+"/":"")+entry.name);
+      }
+    }
+  }
+
+  /* ---------- 입력: 파일 선택 ---------- */
+  $("btnFiles").addEventListener("click",function(){
+    var inp=document.createElement("input");
+    inp.type="file"; inp.multiple=true;
+    inp.addEventListener("change",function(){
+      allFiles=[]; selected={}; dirHandle=null;
+      Array.prototype.forEach.call(inp.files,function(file){
+        var rel=file.webkitRelativePath||file.name;
+        allFiles.push({name:file.name,size:file.size,path:rel,file:file,handle:null,parentHandle:null,plat:detectPlat(rel)});
+      });
+      finishLoad();
+    });
+    inp.click();
+  });
+
+  /* ---------- 드래그&드롭 ---------- */
+  var drop=$("drop");
+  ["dragenter","dragover"].forEach(function(ev){
+    drop.addEventListener(ev,function(e){ e.preventDefault(); drop.classList.add("hot"); });
+  });
+  ["dragleave","drop"].forEach(function(ev){
+    drop.addEventListener(ev,function(e){ e.preventDefault(); if(ev==="dragleave"||ev==="drop") drop.classList.remove("hot"); });
+  });
+  drop.addEventListener("drop",async function(e){
+    e.preventDefault();
+    allFiles=[]; selected={}; dirHandle=null;
+    var items=e.dataTransfer.items;
+    var tasks=[];
+    if(items && items.length && items[0].webkitGetAsEntry){
+      for(var i=0;i<items.length;i++){
+        var ent=items[i].webkitGetAsEntry();
+        if(ent) tasks.push(traverseEntry(ent,""));
+      }
+      await Promise.all(tasks);
+    } else {
+      Array.prototype.forEach.call(e.dataTransfer.files,function(file){
+        allFiles.push({name:file.name,size:file.size,path:file.name,file:file,handle:null,parentHandle:null,plat:"mac"});
+      });
+    }
+    finishLoad();
+  });
+  function traverseEntry(entry,prefix){
+    return new Promise(function(resolve){
+      if(entry.isFile){
+        entry.file(function(file){
+          var path=(prefix?prefix+"/":"")+entry.name;
+          allFiles.push({name:entry.name,size:file.size,path:path,file:file,handle:null,parentHandle:null,plat:detectPlat(path)});
+          resolve();
+        },function(){ resolve(); });
+      } else if(entry.isDirectory){
+        var reader=entry.createReader(); var collected=[];
+        var readBatch=function(){
+          reader.readEntries(function(ents){
+            if(!ents.length){
+              Promise.all(collected.map(function(en){ return traverseEntry(en,(prefix?prefix+"/":"")+entry.name); })).then(resolve);
+            } else { collected=collected.concat(Array.prototype.slice.call(ents)); readBatch(); }
+          },function(){ resolve(); });
+        };
+        readBatch();
+      } else resolve();
+    });
+  }
+
+  function finishLoad(){
+    buildGroups();
+    // 펼침 상태 초기화
+    render();
+    if(!allFiles.length) alert("불러온 파일이 없습니다.");
+  }
+
+  /* ---------- 필터 / 선택 도우미 ---------- */
+  $("filter").addEventListener("click",function(e){
+    if(e.target.tagName!=="BUTTON") return;
+    curFilter=e.target.getAttribute("data-f");
+    Array.prototype.forEach.call($("filter").children,function(b){ b.classList.toggle("on",b===e.target); });
+    render();
+  });
+  var searchTimer=null;
+  $("search").addEventListener("input",function(){
+    clearTimeout(searchTimer);
+    searchTimer=setTimeout(render,120);
+  });
+  $("btnAutoSelect").addEventListener("click",function(){
+    selected={};
+    groups.forEach(function(g){
+      if(g.single) return; // 무작위 단독묶음은 서로 다른 파일이므로 자동선택 제외
+      // 첫 항목(남김 추천) 제외, 나머지 선택
+      g.items.forEach(function(idx,pos){ if(pos>0) selected[allFiles[idx].path]=true; });
+    });
+    render();
+  });
+  $("btnClearSel").addEventListener("click",function(){ selected={}; render(); });
+  $("btnExpand").addEventListener("click",function(){
+    Array.prototype.forEach.call($("groups").children,function(g){ g.classList.remove("collapsed"); });
+  });
+  $("btnReset").addEventListener("click",function(){
+    allFiles=[]; groups=[]; selected={}; dirHandle=null; curFilter="all";
+    $("search").value="";
+    Array.prototype.forEach.call($("filter").children,function(b){ b.classList.toggle("on",b.getAttribute("data-f")==="all"); });
+    render();
+  });
+
+  /* ---------- 삭제 (크롬 휴지통/삭제) ---------- */
+  $("btnDelete").addEventListener("click",async function(){
+    var paths=Object.keys(selected);
+    if(!paths.length) return;
+    var pathToFile={}; allFiles.forEach(function(f){ pathToFile[f.path]=f; });
+
+    var deletable=paths.filter(function(p){ return pathToFile[p] && pathToFile[p].parentHandle; });
+    if(!deletable.length){
+      alert("이 모드에서는 브라우저가 직접 삭제할 수 없습니다.\n‘삭제 스크립트 내려받기’를 이용하세요.\n\n(직접 삭제는 크롬/엣지에서 ‘폴더 선택해서 스캔’으로 불러온 경우에만 가능합니다.)");
+      return;
+    }
+    if(!confirm(deletable.length+"개 파일을 삭제합니다. 계속할까요?\n\n※ 운영체제 설정에 따라 휴지통으로 가거나 영구 삭제될 수 있습니다.")) return;
+
+    var ok=0,fail=0;
+    for(var i=0;i<deletable.length;i++){
+      var f=pathToFile[deletable[i]];
+      try{
+        if(f.parentHandle.removeEntry){
+          await f.parentHandle.removeEntry(f.handle.name);
+          ok++;
+        } else { fail++; }
+      }catch(e){ fail++; }
+    }
+    // 목록에서 제거
+    allFiles=allFiles.filter(function(f){ return !(selected[f.path] && f.parentHandle); });
+    selected={};
+    buildGroups(); render();
+    alert("삭제 완료: "+ok+"개"+(fail?(" · 실패 "+fail+"개"):""));
+  });
+
+  /* ---------- 삭제 스크립트 생성 ---------- */
+  $("btnScript").addEventListener("click",function(){
+    var paths=Object.keys(selected);
+    if(!paths.length){ alert("선택된 파일이 없습니다."); return; }
+    var pathToFile={}; allFiles.forEach(function(f){ pathToFile[f.path]=f; });
+    var win=paths.some(function(p){ return pathToFile[p] && pathToFile[p].plat==="win"; });
+
+    var content,fname,mime;
+    if(win){
+      var lines=["@echo off","chcp 65001 >nul","echo 아래 파일을 휴지통이 아닌 위치로 이동하려면 경로를 확인하세요.",""];
+      paths.forEach(function(p){
+        var f=pathToFile[p]; var path=(f.path||f.name).replace(/\//g,"\\");
+        lines.push('del /f /q "'+path+'"');
+      });
+      lines.push("","echo 완료. 아무 키나 누르세요.","pause >nul");
+      content=lines.join("\r\n"); fname="삭제_파일정리.bat"; mime="application/bat";
+    } else {
+      var l=["#!/bin/bash","# 더블클릭이 안 되면: chmod +x 후 실행하거나, 터미널에서 bash 이 파일",
+             "# 휴지통으로 보내려면 아래 rm 대신 'trash'(brew install trash) 사용 권장",""];
+      paths.forEach(function(p){
+        var f=pathToFile[p]; var path=f.path||f.name;
+        l.push('rm -f '+shq(path));
+      });
+      l.push("","echo '완료.'");
+      content=l.join("\n"); fname="삭제_파일정리.command"; mime="application/x-sh";
+    }
+    var blob=new Blob([content],{type:mime});
+    var a=document.createElement("a");
+    a.href=URL.createObjectURL(blob); a.download=fname;
+    document.body.appendChild(a); a.click();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },1500);
+
+    var note = win
+      ? "윈도우용 .bat 파일을 내려받았습니다.\n\n주의: 끌어다 놓기/선택으로 불러온 경우 상대경로만 담길 수 있어, 파일이 있는 폴더에서 실행해야 정확히 지워집니다. 크롬에서 ‘폴더 선택’으로 불러오면 더 정확합니다."
+      : "맥용 .command 파일을 내려받았습니다.\n\n실행: 파일이 있는 폴더에서 터미널로 'bash 삭제_파일정리.command' 실행을 권장합니다. (상대경로 기준)\n휴지통으로 보내려면 trash 명령 사용을 권장합니다.";
+    alert(note);
+  });
+  function shq(s){ return "'"+String(s).replace(/'/g,"'\\''")+"'"; }
+
+  setMode();
+  render();
+})();
+</script>
+</body>
+</html>
