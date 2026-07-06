@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BGC Clinic Visit Planner · MegaGen Philippines</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root{
+    --ink:#12233b; --ink-soft:#4a5b72; --paper:#f6f4ee; --card:#fff; --line:#e0dccf;
+    --blue:#1b56b0; --blue-deep:#0e3a80; --gold:#b98a2e;
+    --deal:#1f9d6b; --consult:#1b56b0; --revisit:#8a52c9; --prospect:#b98a2e; --noshow:#a3adba;
+    --visited:#1f9d6b; --notvisited:#c0392b;
+    --shadow:0 1px 2px rgba(18,35,59,.06),0 6px 22px rgba(18,35,59,.08); --danger:#c0392b;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif;background:var(--paper);
+    color:var(--ink);-webkit-font-smoothing:antialiased;line-height:1.5}
+  header{background:linear-gradient(120deg,var(--blue-deep),var(--blue));color:#fff;
+    padding:16px 22px;display:flex;align-items:center;justify-content:space-between;
+    flex-wrap:wrap;gap:12px;box-shadow:var(--shadow);position:sticky;top:0;z-index:1000}
+  header .brand{display:flex;align-items:center;gap:12px}
+  header .diamond{width:24px;height:24px;transform:rotate(45deg);
+    background:linear-gradient(135deg,#eaf1ff,#8ab4f8);border:2px solid #fff;border-radius:5px;
+    flex:0 0 auto;box-shadow:0 0 12px rgba(138,180,248,.6)}
+  header h1{font-size:1.1rem;font-weight:700}
+  header .sub{font-size:.7rem;opacity:.82}
+  header .stats{display:flex;gap:16px;font-size:.74rem;text-align:center}
+  header .stats b{display:block;font-size:1.1rem;font-weight:700}
+
+  .tabs{display:flex;gap:2px;background:var(--blue-deep);padding:0 22px;flex-wrap:wrap}
+  .tab{background:none;border:none;color:#cfe0fb;padding:11px 18px;font-size:.85rem;
+    font-weight:600;cursor:pointer;font-family:inherit;border-bottom:3px solid transparent}
+  .tab.on{color:#fff;border-bottom-color:#8ab4f8}
+
+  .sync-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+    background:#eef4fb;border-bottom:1px solid #d4e2f5;padding:8px 22px;font-size:.78rem}
+  .sync-bar .sync-label{font-weight:700;color:var(--blue-deep)}
+  .sync-bar input{flex:1;min-width:200px;max-width:440px;padding:6px 10px;font-size:.78rem}
+  .sync-dot{width:10px;height:10px;border-radius:50%;flex:0 0 auto}
+  .sync-dot.off{background:#c0392b}.sync-dot.on{background:#1f9d6b}.sync-dot.busy{background:#d98a1f}
+  .sync-msg{font-size:.74rem;color:var(--ink-soft)}
+
+  .wrap{max-width:1200px;margin:0 auto;padding:20px 22px 60px}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:14px;
+    box-shadow:var(--shadow);overflow:hidden;margin-bottom:20px}
+  .panel .head{display:flex;align-items:center;justify-content:space-between;
+    padding:14px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap;gap:10px}
+  .panel .head h2{font-size:.95rem;font-weight:700}
+  .panel .head .desc{font-size:.74rem;color:var(--ink-soft);font-weight:400;margin-top:2px}
+
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:12px 18px;
+    border-bottom:1px solid var(--line)}
+  .toolbar .search{flex:1;min-width:180px}
+  input,select,textarea{width:100%;padding:8px 11px;border:1px solid var(--line);
+    border-radius:8px;font-size:.88rem;font-family:inherit;color:var(--ink);background:#fff}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue);
+    box-shadow:0 0 0 3px rgba(27,86,176,.12)}
+  textarea{resize:vertical;min-height:44px}
+
+  .btn{border:none;border-radius:8px;padding:8px 14px;font-size:.82rem;font-weight:600;
+    cursor:pointer;font-family:inherit;transition:filter .15s}
+  .btn-primary{background:var(--blue);color:#fff}.btn-primary:hover{filter:brightness(1.08)}
+  .btn-ghost{background:#eef2f8;color:var(--blue-deep)}.btn-ghost:hover{filter:brightness(.97)}
+  .btn-sm{padding:5px 10px;font-size:.74rem}
+
+  .list{max-height:640px;overflow:auto}
+  .clinic{padding:13px 18px;border-bottom:1px solid var(--line);display:grid;
+    grid-template-columns:1fr auto;gap:6px 14px;align-items:start}
+  .clinic:hover{background:#fafbfd}
+  .clinic .name{font-weight:700;font-size:.92rem;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .clinic .addr{font-size:.76rem;color:var(--ink-soft);margin-top:2px}
+  .clinic .rmk{font-size:.72rem;color:var(--gold);margin-top:2px}
+  .clinic .ctl{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;align-items:center}
+  .clinic .ctl select,.clinic .ctl input{width:auto;min-width:0;padding:5px 8px;font-size:.76rem}
+  .clinic .ctl input[type=date]{width:140px}
+  .clinic .side{text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:6px;white-space:nowrap}
+  .num{font-size:.72rem;color:var(--ink-soft);font-weight:700;min-width:22px}
+  .gbadge{font-size:.66rem;font-weight:700;padding:2px 8px;border-radius:20px;background:#eef2f8;color:var(--blue-deep)}
+
+  .tag{font-size:.66rem;font-weight:700;padding:2px 9px;border-radius:20px;color:#fff}
+  .t-Planned{background:#4a5b72}.t-Done{background:var(--deal)}.t-Skip{background:var(--noshow)}
+  .rtag{font-size:.66rem;font-weight:700;padding:2px 9px;border-radius:20px;color:#fff}
+  .r-Doctor{background:var(--deal)}.r-Flyer{background:var(--consult)}
+  .r-Failed{background:var(--danger)}.r-Other{background:var(--prospect)}
+  .rv-Yes{background:var(--revisit)}.rv-No{background:var(--noshow)}
+
+  .link{background:none;border:none;color:var(--blue);font-size:.74rem;cursor:pointer;
+    text-decoration:underline;padding:0;font-family:inherit}
+
+  .filters{display:flex;gap:6px;flex-wrap:wrap;padding:12px 18px 0}
+  .chip{font-size:.72rem;padding:5px 12px;border-radius:20px;border:1px solid var(--line);
+    background:#fff;cursor:pointer;color:var(--ink-soft);font-weight:600}
+  .chip.on{background:var(--blue);color:#fff;border-color:var(--blue)}
+  .count{font-size:.7rem;opacity:.7;margin-left:4px}
+
+  #map{width:100%;height:460px}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;padding:12px 18px;font-size:.78rem;color:var(--ink-soft)}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .ldot{width:12px;height:12px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px #bbb}
+
+  .day-group,.route-group{border-bottom:1px solid var(--line)}
+  .day-head{background:#eef2f8;padding:9px 18px;font-size:.8rem;font-weight:700;
+    color:var(--blue-deep);display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+  .sched-item{padding:11px 18px;border-bottom:1px solid #f0eee6;display:flex;
+    justify-content:space-between;align-items:center;gap:12px}
+  .sched-item:last-child{border-bottom:none}
+  .sched-item .nm{font-weight:600;font-size:.86rem}
+  .sched-item .ad{font-size:.73rem;color:var(--ink-soft)}
+
+  .empty{padding:44px 20px;text-align:center;color:var(--ink-soft);font-size:.86rem}
+  .empty b{display:block;color:var(--ink);font-size:.95rem;margin-bottom:4px}
+  footer{text-align:center;font-size:.72rem;color:var(--ink-soft);padding:10px 0 30px}
+
+  .report-body{padding:18px}
+  .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-bottom:22px}
+  .kpi{border:1px solid var(--line);border-radius:12px;padding:14px 16px;background:#fafbfd}
+  .kpi .k-num{font-size:1.7rem;font-weight:800;line-height:1}
+  .kpi .k-lbl{font-size:.72rem;color:var(--ink-soft);font-weight:600;margin-top:6px}
+  .kpi.progress{background:linear-gradient(120deg,#0e3a80,#1b56b0);color:#fff;border:none}
+  .kpi.progress .k-lbl{color:#cfe0fb}
+  .rsection{margin-bottom:24px}
+  .rsection h3{font-size:.82rem;text-transform:uppercase;letter-spacing:.6px;
+    color:var(--ink-soft);margin-bottom:10px;border-bottom:1px solid var(--line);padding-bottom:6px}
+  .bar-row{display:flex;align-items:center;gap:10px;margin-bottom:7px;font-size:.8rem}
+  .bar-row .bl{width:96px;flex:0 0 auto;font-weight:600}
+  .bar-track{flex:1;height:16px;background:#eef2f8;border-radius:8px;overflow:hidden}
+  .bar-fill{height:100%;border-radius:8px}
+  .bar-row .bv{width:34px;text-align:right;font-weight:700;color:var(--ink-soft)}
+  .rtable{width:100%;border-collapse:collapse;font-size:.8rem}
+  .rtable th{text-align:left;padding:7px 10px;background:#eef2f8;color:var(--blue-deep);
+    font-size:.72rem;text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--line)}
+  .rtable td{padding:7px 10px;border-bottom:1px solid #f0eee6;vertical-align:top}
+  .rempty{color:var(--ink-soft);font-size:.8rem;padding:8px 0}
+
+  @media print{header,.tabs,.sync-bar,.toolbar,footer,.btn{display:none!important}
+    .panel{box-shadow:none;border:none}body{background:#fff}}
+  @media(max-width:640px){.clinic{grid-template-columns:1fr}.clinic .side{text-align:left;align-items:flex-start}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <div class="diamond"></div>
+    <div>
+      <h1>BGC Clinic Visit Planner</h1>
+      <div class="sub">MegaGen BlueDiamond · AJ · Taguig / BGC</div>
+    </div>
+  </div>
+  <div class="stats">
+    <div><b id="stTotal">0</b>Targets</div>
+    <div><b id="stDone">0</b>Visited</div>
+    <div><b id="stLeft">0</b>Not Yet</div>
+    <div><b id="stDeal">0</b>Doctor Met</div>
+  </div>
+</header>
+
+<div class="tabs">
+  <button class="tab on" id="tab-targets" onclick="showTab('targets')">Clinics</button>
+  <button class="tab" id="tab-routes" onclick="showTab('routes')">Route Plans</button>
+  <button class="tab" id="tab-map" onclick="showTab('map')">Map</button>
+  <button class="tab" id="tab-report" onclick="showTab('report')">Report</button>
+</div>
+
+<div class="sync-bar" id="syncBar">
+  <span id="syncStatus" class="sync-dot off"></span>
+  <span class="sync-label">Google Sheet sync</span>
+  <input id="syncUrl" placeholder="Paste Apps Script Web App URL (…/exec)" spellcheck="false">
+  <button class="btn btn-ghost btn-sm" onclick="saveSyncUrl()">Save</button>
+  <button class="btn btn-ghost btn-sm" onclick="testSync()">Test</button>
+  <span id="syncMsg" class="sync-msg"></span>
+</div>
+
+<div class="wrap">
+  <!-- CLINICS -->
+  <div id="view-targets">
+    <div class="panel">
+      <div class="toolbar">
+        <div class="search"><input id="search" placeholder="🔍 Search clinic, address" oninput="renderTargets()"></div>
+        <select id="groupFilter" style="width:auto" onchange="renderTargets()">
+          <option value="">All groups</option>
+        </select>
+        <button class="btn btn-ghost btn-sm" onclick="exportXlsx()">⬇ Excel</button>
+        <button class="btn btn-ghost btn-sm" onclick="exportJson()">Backup</button>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('imp').click()">Restore</button>
+        <button class="btn btn-ghost btn-sm" onclick="resetAll()">Reset</button>
+        <input type="file" id="imp" accept=".json" hidden onchange="importJson(event)">
+      </div>
+      <div class="filters" id="statusFilters"></div>
+      <div class="list" id="targetList"></div>
+    </div>
+  </div>
+
+  <!-- ROUTES -->
+  <div id="view-routes" hidden>
+    <div class="panel">
+      <div class="head">
+        <div><h2>Route Plans · 4 clinics per group</h2>
+        <div class="desc">Clinics auto-grouped by location so each group is a short walking route. Assign a date to plan a day.</div></div>
+      </div>
+      <div id="routeList"></div>
+    </div>
+  </div>
+
+  <!-- MAP -->
+  <div id="view-map" hidden>
+    <div class="panel">
+      <div class="head"><div><h2>BGC Map</h2><div class="desc">Green = visited, Red = not yet visited. Numbers = route group.</div></div></div>
+      <div class="legend">
+        <span><span class="ldot" style="background:#1f9d6b"></span> Visited</span>
+        <span><span class="ldot" style="background:#c0392b"></span> Not yet visited</span>
+        <span><span class="ldot" style="background:#8a52c9"></span> Revisit needed</span>
+      </div>
+      <div id="map"></div>
+    </div>
+  </div>
+
+  <!-- REPORT -->
+  <div id="view-report" hidden>
+    <div class="panel">
+      <div class="head">
+        <div><h2>Visit Report</h2><div class="desc" id="reportDate"></div></div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn btn-ghost btn-sm" onclick="window.print()">🖨 Print / PDF</button>
+          <button class="btn btn-primary btn-sm" onclick="exportReport()">⬇ Export report (Excel)</button>
+        </div>
+      </div>
+      <div id="reportBody" class="report-body"></div>
+    </div>
+  </div>
+</div>
+
+<footer>Data saved in this browser + optionally to your Google Sheet. · 34 BGC clinic targets · single user (AJ)</footer>
+
+<script>
+var CLINICS = [{"name": "Affinity Dental Clinic BGC High Street", "addr": "4th flr, One Bonifacio High Street Mall, 5th Ave, Taguig 1635", "maps": "https://maps.app.goo.gl/FQNRCh5gfU8K6JL17", "contact": "9177111492 , 270043187", "remarks": "On call specialist", "lat": 14.5501, "lng": 121.0459, "group": 4}, {"name": "Grand Dental Center - BGC", "addr": "UGF, Unit B , C & H Grand Hamptons Tower 1 31 St, Corner 2nd Ave, Taguig, 1634 Metro Manila", "maps": "https://maps.app.goo.gl/N43dbCqnTAhW9Mwr5", "contact": "9173950339", "remarks": "General Dentistry & OrthodonticSpecialist", "lat": 14.5548, "lng": 121.0501, "group": 5}, {"name": "iSmile Dental Home", "addr": "Spanish Bay Tower, Bonifacio Ridge 1st Ave, Taguig, 1634 Metro Manila", "maps": "https://maps.app.goo.gl/hsvNDDEhd5xfuY3G7", "contact": "288921467", "remarks": "ORTHODONTICS - ORAL SURGERY & IMPLANTS", "lat": 14.5486, "lng": 121.0512, "group": 7}, {"name": "Dentacare BGC", "addr": "Park, Burgos Circle, corner 2nd Ave, Taguig, 1634 Metro Manila", "maps": "https://maps.app.goo.gl/zu83kkd13rNonSV37", "contact": "9285033280 , 9988878787", "remarks": "ROTATING DENTISTS", "lat": 14.5527, "lng": 121.0466, "group": 1}, {"name": "GAOC One Bonifacio -  Gan Advanced Osseointegration Center | Most Advanced Dental Clinic in BGC", "addr": "Park, One Bonifacio High Street Mall 3rd flr unit L335 One Bonifacio High Street, 5th Ave, Taguig", "maps": "https://maps.app.goo.gl/AmpVTEvbRjw4mE8z8", "contact": "9171464262 , +6379034262", "remarks": "(Founder / Prosthodontics, Oral Surgery, Dental Implants)", "lat": 14.5503, "lng": 121.0461, "group": 4}, {"name": "Elevate Dental BSO - BGC", "addr": "", "maps": "https://maps.app.goo.gl/Pdhc839HdzL7PGsZ6", "contact": "", "remarks": "", "lat": 14.5498, "lng": 121.047, "group": 3}, {"name": "One Global Dental Specialists, Inc.", "addr": "2F, Bonifacio high street, 7th Ave, Bonifacio Global City, Taguig, 1635 Metro Manila", "maps": "https://maps.app.goo.gl/vxVgTEprzjk8HHZ67", "contact": "9195259751", "remarks": "HEAD OF ORTHODONTICS & DENTAL IMPLANTS", "lat": 14.5512, "lng": 121.0475, "group": 2}, {"name": "Zentistry", "addr": "7th Floor, Icon Plaza, 26th St, Taguig, Metro Manila", "maps": "https://maps.app.goo.gl/d6dEfZbCgkPpN7t28", "contact": "9064444555", "remarks": "SPECIALTY IN ENDODONTICS, ESTHETICS, ORTHODONTICS, IMPLANTS, TEMPOROMANDIBULAR DISORDER, OROFACIAL PAIN", "lat": 14.5535, "lng": 121.0448, "group": 1}, {"name": "Shine Dental BGC", "addr": "G/F, Tower, The Infinity, 26th St, Taguig, 1635 Metro Manila", "maps": "https://maps.app.goo.gl/wokpsJ2XkYNBCrGs5", "contact": "9668661460", "remarks": "Oral Surgery, Implant Dentistry, TMD & Orofacial pain", "lat": 14.554, "lng": 121.0455, "group": 1}, {"name": "Teeth Avenue Dental Clinic: TMJ Orthodontics, Implant, and Zircomia Center", "addr": "2/F, Serendra Commercial Center, Taguig, 1634 Metro Manila", "maps": "https://maps.app.goo.gl/zc8eWjDVYGNv9z8N8", "contact": "288562878 , 09275403347", "remarks": "", "lat": 14.547, "lng": 121.0525, "group": 8}, {"name": "MDental: Center for Implant & General Dentistry", "addr": "", "maps": "https://maps.app.goo.gl/QMPFzgdgWHiYKnCh9", "contact": "", "remarks": "", "lat": 14.5472, "lng": 121.052, "group": 8}, {"name": "Urban Smiles Dental Clinic BGC", "addr": "", "maps": "https://maps.app.goo.gl/hWaCsh9jRHGxjPvv5", "contact": "", "remarks": "", "lat": 14.551, "lng": 121.047, "group": 2}, {"name": "Asian Base Dental Group", "addr": "9th Ave, Bonifacio Global City, Taguig, Metro Manila", "maps": "https://maps.app.goo.gl/heit3jipwvzVuew16", "contact": "288163049 , 09178901279", "remarks": "HEAD SENIOR DENIST", "lat": 14.556, "lng": 121.049, "group": 5}, {"name": "Affinity Dental Clinics BGC Stopover", "addr": "B6 2nd floor, Bonifacio Stopover Building, corner Rizal Drive, 32nd St, Post Proper Northside, Taguig, 1635 Metro Manila", "maps": "https://maps.app.goo.gl/83FVq6ksWK8wrWJU9", "contact": "9178728297", "remarks": "", "lat": 14.5497, "lng": 121.0471, "group": 3}, {"name": "Pediatric and Special Care Dentistry by Roco-Bernardino and Co Dental Clinic (BGC - 8F High Street South Tower 1)", "addr": "8/F High Street South Corporate Plaza Tower 1 9th Ave, Corner 26th St, Taguig, 1634", "maps": "https://maps.app.goo.gl/r6Trfz2otCeJ3FC87", "contact": "9561884525", "remarks": "", "lat": 14.5518, "lng": 121.0468, "group": 2}, {"name": "Urban Smiles Dental Clinis St. Luke's BGC", "addr": "Unit 1232, St. Luke's Medical Center - BGC, Medical Arts Building, Taguig, 1634 Metro Manila", "maps": "https://maps.app.goo.gl/5F6WNjtjiwNk2tE27", "contact": "9195630549 / 99770613753", "remarks": "", "lat": 14.5545, "lng": 121.0505, "group": 5}, {"name": "CROWN Advanced Dentistry - BGC", "addr": "2F, 8 Forbestown Rd, Taguig, Metro Manila", "maps": "https://maps.app.goo.gl/nGvtaFYTE48HxHkPA", "contact": "9171663368", "remarks": "DENTISTS NOT PUBLICLY LISTED", "lat": 14.5488, "lng": 121.0498, "group": 7}, {"name": "BrightSmile Avenue Dental Clinis", "addr": "305, McKinley Park Residences, 3rd Ave, Taguig, Metro Manila", "maps": "https://maps.app.goo.gl/YGVAd39pz56NbLos8", "contact": "276212556", "remarks": "", "lat": 14.5525, "lng": 121.0435, "group": 1}, {"name": "YM DENTAL CENTER 영민치과", "addr": "2/F, B6, Bonifacio High Street, Taguig, Metro Manila", "maps": "https://maps.app.goo.gl/kxaK8gdGdb5zqH78A", "contact": "9669537000", "remarks": "HEAD DENTIST", "lat": 14.5505, "lng": 121.0473, "group": 3}, {"name": "One Nadela Dental Group - BGC", "addr": "Ground Floor, Shop 3, Panorama Tower, 34th Street, corner Lane A, Post Proper Northside, Taguig, 1635 Metro Manila", "maps": "https://maps.app.goo.gl/Xn9xWxVTaWJSvvur5", "contact": "9215718527", "remarks": "ON CALL/ROTATING DENTISTS", "lat": 14.5568, "lng": 121.0478, "group": 6}, {"name": "Better Dental BGC", "addr": "Unit 135, 1st Floor, SOHO Avida Cityflex Tower, Lane T, Taguig, 1635 Metro Manila", "maps": "https://maps.app.goo.gl/3Qb8U3cVBTJWuxZ2A", "contact": "9693360484", "remarks": "", "lat": 14.5572, "lng": 121.047, "group": 6}, {"name": "Ferraren BGC Dental Clinic", "addr": "Avida Cityflex Unit 311 SoHo, 7th Avenue, 34th St, Taguig, 1603 Metro Manila", "maps": "https://maps.app.goo.gl/2YiHBRLBxuGRHqw5A", "contact": "9156405302 , 02772009555", "remarks": "", "lat": 14.5574, "lng": 121.0472, "group": 6}, {"name": "Novodental Uptown Parade | Affordable Premium Dental Clinic in BGC", "addr": "Retail 13, Second Floor, Uptown Parade – Cluster 2, 36th Street, 9th Ave, Taguig, 1635 Metro Manila", "maps": "https://maps.app.goo.gl/RgwuFmv62PMQKaEB9", "contact": "270886686", "remarks": "", "lat": 14.559, "lng": 121.05, "group": 7}, {"name": "Elevate Dental MITSUKOSHI BGC", "addr": "North, Grand Central Park, 2/F, Mitsukoshi Mall, 8th Ave, Corner 36th St, Post Proper Northside, Taguig, 1630 Metro Manila", "maps": "https://maps.app.goo.gl/oLcovsqEDzGSFw9EA", "contact": "9171599284", "remarks": "PROSTHODONTIST / ORTHODONTIST / PEDIATRIC & COSMETIC DENTISTRY", "lat": 14.5585, "lng": 121.0505, "group": 7}, {"name": "Ermita Dental Clinic", "addr": "Unit 2f, F1 Hotel, Lane Q, Taguig, Metro Manila", "maps": "https://maps.app.goo.gl/BoUzEpmVq9PF9iTs7", "contact": "284785204", "remarks": "", "lat": 14.552, "lng": 121.048, "group": 4}, {"name": "Dior San Buena Dental Care BGC", "addr": "LEVEL 3, Sm Aura Premier, Taguig, 1630 Metro Manila", "maps": "https://maps.app.goo.gl/RGZQPwxgdzYrcTRDA", "contact": "9178837373", "remarks": "", "lat": 14.547, "lng": 121.0505, "group": 8}, {"name": "Smile Channel", "addr": "Market Market Mall, McKinley Pkwy, Taguig, 1634 Metro Manila", "maps": "https://maps.app.goo.gl/gAxxVJVvvMrF8zfX7", "contact": "9327651119", "remarks": "", "lat": 14.549, "lng": 121.054, "group": 8}, {"name": "Dental City - Market! Market!", "addr": "3/ F Market! Market! Mall, Global City, Fort Bonifacio, Taguig City, Metro Manila, Taguig", "maps": "https://maps.app.goo.gl/o9p3KFtWAGXyaHJm8", "contact": "288897890", "remarks": "", "lat": 14.549, "lng": 121.0542, "group": 9}, {"name": "Healthway - Market! Market!", "addr": "4th Floor, Market! Market!, 26th St, Post Proper Northside, Taguig, 1634 Metro Manila", "maps": "https://maps.app.goo.gl/SxaJAUcdVTfsSFQj7", "contact": "", "remarks": "", "lat": 14.5491, "lng": 121.0541, "group": 9}, {"name": "Global Smiles Dental Center", "addr": "1501 15th Floor 10th avenue, corner 39th St, Bonifacio Global City, Taguig, Metro Manila", "maps": "https://maps.app.goo.gl/oBk6ZDhn7JLPLejh8", "contact": "9176584732", "remarks": "", "lat": 14.558, "lng": 121.046, "group": 6}, {"name": "Casipit-Tan Dental Clinic", "addr": "", "maps": "https://maps.app.goo.gl/YYVhDN3QG8cuoxFL6", "contact": "", "remarks": "", "lat": 14.551, "lng": 121.047, "group": 2}, {"name": "Dr. Hermogenes Pedro Villareal", "addr": "Saint Luke's Medical Center, Rizal Drive, Corner 32nd Street, Bonifacio Global City, Taguig, 1555 Metro Manila", "maps": "https://maps.app.goo.gl/4ZuRaySYJFNisg8G8", "contact": "287230101", "remarks": "", "lat": 14.5546, "lng": 121.0506, "group": 5}, {"name": "BG&C Dental Clinic", "addr": "3rd Ave, cor 31st Street, Taguig, 1635 Metro Manila", "maps": "https://maps.app.goo.gl/ALdM2j2E1pzNck166", "contact": "9770634441", "remarks": "GENERAL DENTISTRY & ORTHODONTICS", "lat": 14.5515, "lng": 121.0455, "group": 4}, {"name": "JCCM Dental Clinic", "addr": "11th Floor, B09, Fort Victoria Condominium, 5th Ave, Taguig, 1634 Metro Manila", "maps": "https://maps.app.goo.gl/wiavpQLbjDrw18GS6", "contact": "288083054 /09663385771", "remarks": "GENERAL DENTISTRY, ENDODONTICS & ORTHODONTICS", "lat": 14.55, "lng": 121.0463, "group": 3}];
+var KEY='megagen_bgc_planner_v2';
+var SYNC_KEY='megagen_bgc_sync_url';
+var syncUrl=localStorage.getItem(SYNC_KEY)||'';
+var activeStatus='all';
+var map=null, markers=[];
+var RLABEL={Doctor:'Met the doctor',Flyer:'Flyer left at desk',Failed:'Visit failed',Other:'Other'};
+var RESULT_COLORS={Doctor:'#1f9d6b',Flyer:'#1b56b0',Failed:'#c0392b',Other:'#b98a2e'};
+var REVISIT_LABEL={'':'—',Yes:'Revisit needed',No:'No revisit'};
+
+function slug(s){return s.replace(/[^a-z0-9]/gi,'').slice(0,24)}
+function load(){
+  var saved={};try{saved=JSON.parse(localStorage.getItem(KEY))||{}}catch(e){}
+  return CLINICS.map(function(c){
+    var id=slug(c.name)+'_'+(c.maps.split('/').pop()||'');
+    var s=saved[id]||{};
+    return {id:id,name:c.name,addr:c.addr,maps:c.maps,contact:c.contact,remarks:c.remarks,
+      lat:c.lat,lng:c.lng,group:c.group,
+      status:s.status||'Planned',date:s.date||'',result:s.result||'',note:s.note||'',
+      revisit:s.revisit||'',otherText:s.otherText||''};
+  });
+}
+var items=load();
+function persist(){var o={};items.forEach(function(v){o[v.id]={status:v.status,date:v.date,result:v.result,note:v.note,revisit:v.revisit,otherText:v.otherText}});
+  localStorage.setItem(KEY,JSON.stringify(o));}
+function esc(s){return (s||'').replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+function isVisited(v){return v.status==='Done'}
+
+/* ---- SYNC ---- */
+function setDot(s){document.getElementById('syncStatus').className='sync-dot '+s}
+function syncMsg(t){document.getElementById('syncMsg').textContent=t}
+function saveSyncUrl(){var u=document.getElementById('syncUrl').value.trim();syncUrl=u;localStorage.setItem(SYNC_KEY,u);
+  if(u){setDot('on');syncMsg('Saved. Use the Save button on each clinic.');}else{setDot('off');syncMsg('Sync off.');}}
+function sendRows(rowsArr){if(!syncUrl)return Promise.resolve(false);setDot('busy');syncMsg('Sending…');
+  return fetch(syncUrl,{method:'POST',mode:'no-cors',redirect:'follow',
+    headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body:JSON.stringify(rowsArr)}).then(function(){setDot('on');
+    syncMsg('Saved to sheet · '+new Date().toLocaleTimeString());return true;})
+    .catch(function(){setDot('off');syncMsg('Send failed. Check URL / deployment.');return false;});}
+function resultText(v){
+  if(v.result==='Other')return 'Other: '+(v.otherText||'');
+  return RLABEL[v.result]||v.result||'';
+}
+function rowFor(v){return {name:v.name,addr:v.addr,contact:v.contact,status:v.status,
+  date:v.date,result:resultText(v),revisit:REVISIT_LABEL[v.revisit]||'',note:v.note,maps:v.maps};}
+function testSync(){if(!syncUrl){syncMsg('Enter and Save the URL first.');return;}
+  sendRows([{name:'__TEST__',status:'Test',date:new Date().toISOString().slice(0,10),
+    note:'connection test',result:'',addr:'',contact:'',maps:''}])
+    .then(function(){syncMsg('Test row sent. Check your Google Sheet.');});}
+
+/* ---- FIELD EDIT (local only) ---- */
+function setField(id,field,val){
+  var it=items.find(function(x){return x.id===id});if(!it)return;
+  it[field]=val;
+  if(field==='result'&&val&&it.status==='Planned'){it.status='Done';}
+  persist();stats();
+  if(field==='status'||field==='result'||field==='revisit'){renderTargets();refreshMarkers();}
+}
+/* ---- SAVE one clinic → send to sheet ---- */
+function saveClinic(id){
+  var it=items.find(function(x){return x.id===id});if(!it)return;
+  if(it.status==='Planned')it.status='Done';   // saving a result means it was visited
+  it.date=it.date||new Date().toISOString().slice(0,10);
+  persist();stats();renderTargets();refreshMarkers();
+  if(!syncUrl){syncMsg('Saved locally. Connect Google Sheet to share.');
+    flash(id,'Saved (local)');return;}
+  sendRows([rowFor(it)]).then(function(ok){flash(id,ok?'Saved ✓':'Send failed');});
+}
+function flash(id,msg){
+  var b=document.getElementById('save_'+id);if(!b)return;
+  var old=b.textContent;b.textContent=msg;b.disabled=true;
+  setTimeout(function(){b.textContent=old;b.disabled=false;},1800);
+}
+function openMaps(url){window.open(url,'_blank')}
+
+/* ---- CLINICS LIST ---- */
+function renderTargets(){
+  var q=document.getElementById('search').value.toLowerCase();
+  var gf=document.getElementById('groupFilter').value;
+  var counts={all:items.length,Planned:0,Done:0,Skip:0};
+  items.forEach(function(v){if(counts[v.status]!=null)counts[v.status]++});
+  var sf=['all','Planned','Done','Skip'];
+  document.getElementById('statusFilters').innerHTML=sf.map(function(s){
+    var lbl=s==='all'?'All':(s==='Skip'?'Skipped':(s==='Done'?'Visited':'Not yet'));
+    return '<span class="chip'+(activeStatus===s?' on':'')+'" onclick="setStatusFilter(\''+s+'\')">'+lbl+
+      '<span class="count">'+(counts[s]||0)+'</span></span>';}).join('');
+  var rows=items.filter(function(v){
+    if(activeStatus!=='all'&&v.status!==activeStatus)return false;
+    if(gf&&String(v.group)!==gf)return false;
+    if(!q)return true;
+    return (v.name+' '+v.addr).toLowerCase().indexOf(q)>-1;});
+  var el=document.getElementById('targetList');
+  if(!rows.length){el.innerHTML='<div class="empty"><b>No matches</b>Adjust search or filters.</div>';return;}
+  el.innerHTML=rows.map(function(v){
+    var gi=items.indexOf(v)+1;
+    return '<div class="clinic"><div>'+
+      '<div class="name"><span class="num">'+gi+'</span>'+esc(v.name)+
+        ' <span class="gbadge">Group '+v.group+'</span>'+
+        (v.result?' <span class="rtag r-'+v.result+'">'+RLABEL[v.result]+'</span>':'')+
+        (v.revisit?' <span class="rtag rv-'+v.revisit+'">'+REVISIT_LABEL[v.revisit]+'</span>':'')+'</div>'+
+      (v.addr?'<div class="addr">📍 '+esc(v.addr)+'</div>':'<div class="addr" style="opacity:.6">📍 (see map)</div>')+
+      (v.remarks?'<div class="rmk">✎ '+esc(v.remarks)+'</div>':'')+
+      '<div class="ctl">'+
+        '<select onchange="setField(\''+v.id+'\',\'status\',this.value)">'+opt(['Planned','Done','Skip'],v.status)+'</select>'+
+        '<input type="date" value="'+v.date+'" onchange="setField(\''+v.id+'\',\'date\',this.value)">'+
+        '<select onchange="setField(\''+v.id+'\',\'result\',this.value)"><option value="">Result…</option>'+
+          optL(RLABEL,v.result)+'</select>'+
+        '<select onchange="setField(\''+v.id+'\',\'revisit\',this.value)">'+
+          '<option value="">Revisit?</option>'+
+          '<option value="Yes"'+(v.revisit==='Yes'?' selected':'')+'>Revisit needed</option>'+
+          '<option value="No"'+(v.revisit==='No'?' selected':'')+'>No revisit</option></select>'+
+      '</div>'+
+      (v.result==='Other'?'<div class="ctl"><input placeholder="Describe (기타 내용 수기입력)" value="'+esc(v.otherText)+'" '+
+        'style="width:100%;min-width:200px" onchange="setField(\''+v.id+'\',\'otherText\',this.value)"></div>':'')+
+      '<div class="ctl"><input placeholder="Note (memo)" value="'+esc(v.note)+'" '+
+        'style="width:100%;min-width:200px" onchange="setField(\''+v.id+'\',\'note\',this.value)"></div>'+
+      '</div>'+
+      '<div class="side"><span class="tag t-'+v.status+'">'+(v.status==='Skip'?'Skipped':(v.status==='Done'?'Visited':'Not yet'))+'</span>'+
+        '<button class="btn btn-primary btn-sm" id="save_'+v.id+'" onclick="saveClinic(\''+v.id+'\')">💾 Save</button>'+
+        (v.contact?'<span class="addr">☎ '+esc(v.contact)+'</span>':'')+
+        '<button class="link" onclick="openMaps(\''+v.maps+'\')">Open in Maps ↗</button></div>'+
+    '</div>';}).join('');
+}
+function opt(arr,sel){return arr.map(function(o){var l=o==='Done'?'Done (visited)':(o==='Planned'?'Planned':'Skip');return '<option value="'+o+'"'+(o===sel?' selected':'')+'>'+l+'</option>'}).join('')}
+function optL(map,sel){return Object.keys(map).map(function(k){return '<option value="'+k+'"'+(k===sel?' selected':'')+'>'+map[k]+'</option>'}).join('')}
+function setStatusFilter(s){activeStatus=s;renderTargets()}
+
+/* ---- ROUTE PLANS ---- */
+function renderRoutes(){
+  var groups={};
+  items.forEach(function(v){(groups[v.group]=groups[v.group]||[]).push(v)});
+  var keys=Object.keys(groups).sort(function(a,b){return a-b});
+  document.getElementById('routeList').innerHTML=keys.map(function(g){
+    var list=groups[g];
+    var done=list.filter(isVisited).length;
+    var names=list.map(function(v){return encodeURIComponent(v.lat+','+v.lng)}).join('/');
+    var routeUrl='https://www.google.com/maps/dir/'+list.map(function(v){return v.lat+','+v.lng}).join('/');
+    return '<div class="route-group">'+
+      '<div class="day-head"><span>Route Group '+g+' · '+done+'/'+list.length+' visited</span>'+
+        '<span><button class="link" onclick="openMaps(\''+routeUrl+'\')">Open route in Google Maps ↗</button></span></div>'+
+      list.map(function(v){
+        return '<div class="sched-item"><div>'+
+          '<div class="nm">'+(isVisited(v)?'✅ ':'⬜ ')+esc(v.name)+
+            (v.result?' <span class="rtag r-'+v.result+'">'+RLABEL[v.result]+'</span>':'')+'</div>'+
+          (v.addr?'<div class="ad">📍 '+esc(v.addr)+'</div>':'')+
+          '</div><div style="text-align:right">'+
+          '<span class="tag t-'+v.status+'">'+(v.status==='Done'?'Visited':(v.status==='Skip'?'Skip':'Not yet'))+'</span><br>'+
+          '<button class="link" onclick="openMaps(\''+v.maps+'\')">Maps ↗</button></div></div>';
+      }).join('')+'</div>';
+  }).join('');
+}
+
+/* ---- MAP ---- */
+function initMap(){
+  if(map)return;
+  map=L.map('map').setView([14.5520,121.0480],15);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    {maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
+  refreshMarkers();
+}
+function markerColor(v){
+  if(v.status==='Skip')return '#a3adba';
+  if(v.revisit==='Yes')return '#8a52c9';
+  return isVisited(v)?'#1f9d6b':'#c0392b';
+}
+function refreshMarkers(){
+  if(!map)return;
+  markers.forEach(function(m){map.removeLayer(m)});markers=[];
+  var bounds=[];
+  items.forEach(function(v){
+    var col=markerColor(v);
+    var mk=L.circleMarker([v.lat,v.lng],{radius:9,fillColor:col,color:'#fff',weight:2,fillOpacity:1});
+    mk.bindPopup('<b>'+esc(v.name)+'</b><br>Group '+v.group+' · '+
+      (isVisited(v)?'Visited':'Not yet visited')+
+      (v.result?' · '+RLABEL[v.result]:'')+
+      (v.addr?'<br>'+esc(v.addr):'')+
+      '<br><a href="'+v.maps+'" target="_blank">Open in Google Maps ↗</a>');
+    mk.addTo(map);markers.push(mk);bounds.push([v.lat,v.lng]);
+  });
+  if(bounds.length)map.fitBounds(bounds,{padding:[30,30]});
+}
+
+/* ---- REPORT ---- */
+function renderReport(){
+  document.getElementById('reportDate').textContent=
+    'As of '+new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})+
+    ' · MegaGen BlueDiamond · AJ · BGC / Taguig';
+  var active=items.filter(function(v){return v.status!=='Skip'});
+  var total=active.length,done=active.filter(isVisited).length;
+  var scheduled=active.filter(function(v){return v.date}).length;
+  var pct=total?Math.round(done/total*100):0;
+  var doctor=active.filter(function(v){return v.result==='Doctor'}).length;
+  var kpi='<div class="kpi-grid">'+
+    '<div class="kpi progress"><div class="k-num">'+pct+'%</div><div class="k-lbl">Visited ('+done+'/'+total+')</div></div>'+
+    '<div class="kpi"><div class="k-num">'+total+'</div><div class="k-lbl">Total Targets</div></div>'+
+    '<div class="kpi"><div class="k-num">'+scheduled+'</div><div class="k-lbl">Scheduled</div></div>'+
+    '<div class="kpi"><div class="k-num">'+(total-done)+'</div><div class="k-lbl">Not Yet Visited</div></div>'+
+    '<div class="kpi"><div class="k-num" style="color:#1f9d6b">'+doctor+'</div><div class="k-lbl">Met the Doctor</div></div></div>';
+  var rkeys=['Doctor','Flyer','Failed','Other'],rmax=1;
+  rkeys.forEach(function(k){var n=active.filter(function(v){return v.result===k}).length;if(n>rmax)rmax=n;});
+  var bars=rkeys.map(function(k){var n=active.filter(function(v){return v.result===k}).length;
+    return '<div class="bar-row"><span class="bl">'+RLABEL[k]+'</span><span class="bar-track">'+
+      '<span class="bar-fill" style="width:'+(n/rmax*100)+'%;background:'+RESULT_COLORS[k]+'"></span></span>'+
+      '<span class="bv">'+n+'</span></div>';}).join('');
+  var doneList=active.filter(isVisited).sort(function(a,b){return (a.date||'')<(b.date||'')?1:-1});
+  var doneRows=doneList.map(function(v){return '<tr><td>'+(v.date||'—')+'</td><td><b>'+esc(v.name)+'</b></td>'+
+    '<td>'+(v.result?'<span class="rtag r-'+v.result+'">'+RLABEL[v.result]+'</span>':'—')+
+    (v.result==='Other'&&v.otherText?' '+esc(v.otherText):'')+'</td>'+
+    '<td>'+(v.revisit?REVISIT_LABEL[v.revisit]:'—')+'</td><td>'+esc(v.note||'')+'</td></tr>';}).join('');
+  var doneSec='<div class="rsection"><h3>Completed Visits ('+doneList.length+')</h3><table class="rtable">'+
+    '<thead><tr><th>Date</th><th>Clinic</th><th>Result</th><th>Revisit</th><th>Note</th></tr></thead><tbody>'+
+    (doneRows||'<tr><td colspan="5" class="rempty">No visits yet.</td></tr>')+'</tbody></table></div>';
+  var rev=active.filter(function(v){return v.revisit==='Yes'});
+  var revRows=rev.map(function(v){return '<tr><td><b>'+esc(v.name)+'</b></td><td>'+esc(v.note||'')+'</td>'+
+    '<td><a class="link" href="'+v.maps+'" target="_blank">Maps ↗</a></td></tr>';}).join('');
+  var revSec='<div class="rsection"><h3>Revisit Needed</h3><table class="rtable">'+
+    '<thead><tr><th>Clinic</th><th>Note</th><th></th></tr></thead><tbody>'+
+    (revRows||'<tr><td colspan="3" class="rempty">None flagged.</td></tr>')+'</tbody></table></div>';
+  document.getElementById('reportBody').innerHTML=kpi+
+    '<div class="rsection"><h3>Results Breakdown</h3>'+bars+'</div>'+doneSec+revSec;
+}
+
+/* ---- STATS + TABS ---- */
+function stats(){
+  var active=items.filter(function(v){return v.status!=='Skip'});
+  document.getElementById('stTotal').textContent=active.length;
+  document.getElementById('stDone').textContent=active.filter(isVisited).length;
+  document.getElementById('stLeft').textContent=active.filter(function(v){return !isVisited(v)}).length;
+  document.getElementById('stDeal').textContent=active.filter(function(v){return v.result==='Doctor'}).length;
+}
+function showTab(t){
+  ['targets','routes','map','report'].forEach(function(x){
+    document.getElementById('view-'+x).hidden=(x!==t);
+    document.getElementById('tab-'+x).classList.toggle('on',x===t);});
+  if(t==='routes')renderRoutes();
+  if(t==='map'){setTimeout(function(){initMap();if(map)map.invalidateSize();},60);}
+  if(t==='report')renderReport();
+}
+
+/* ---- EXPORT ---- */
+function rows(){return items.map(function(v){return{
+  'Clinic Name':v.name,'Route Group':v.group,'Address':v.addr,'Contact':v.contact,
+  'Status':v.status,'Visit Date':v.date,'Result':resultText(v),'Revisit':REVISIT_LABEL[v.revisit]||'','Note':v.note,'Google Maps':v.maps};})}
+function exportXlsx(){var ws=XLSX.utils.json_to_sheet(rows());
+  ws['!cols']=[{wch:40},{wch:11},{wch:44},{wch:20},{wch:10},{wch:12},{wch:20},{wch:14},{wch:30},{wch:38}];
+  var wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'BGC Clinics');
+  XLSX.writeFile(wb,'BGC_Clinics_'+new Date().toISOString().slice(0,10)+'.xlsx');}
+function exportReport(){
+  var active=items.filter(function(v){return v.status!=='Skip'});
+  var total=active.length,done=active.filter(isVisited).length;
+  var wb=XLSX.utils.book_new();
+  var summary=[['MegaGen BlueDiamond — BGC Visit Report (AJ)'],
+    ['As of',new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})],[],
+    ['Total Targets',total],['Visited',done],['Progress %',(total?Math.round(done/total*100):0)+'%'],
+    ['Scheduled',active.filter(function(v){return v.date}).length],['Not Yet Visited',total-done],[],
+    ['Results Breakdown'],
+    ['Met the doctor',active.filter(function(v){return v.result==='Doctor'}).length],
+    ['Flyer left at desk',active.filter(function(v){return v.result==='Flyer'}).length],
+    ['Visit failed',active.filter(function(v){return v.result==='Failed'}).length],
+    ['Other',active.filter(function(v){return v.result==='Other'}).length],[],
+    ['Revisit needed',active.filter(function(v){return v.revisit==='Yes'}).length],
+    ['No revisit',active.filter(function(v){return v.revisit==='No'}).length]];
+  var ws1=XLSX.utils.aoa_to_sheet(summary);ws1['!cols']=[{wch:22},{wch:40}];
+  XLSX.utils.book_append_sheet(wb,ws1,'Summary');
+  var detail=active.map(function(v){return{'Clinic':v.name,'Route Group':v.group,'Status':v.status,
+    'Visit Date':v.date,'Result':resultText(v),'Revisit':REVISIT_LABEL[v.revisit]||'','Note':v.note,'Address':v.addr,'Google Maps':v.maps};});
+  var ws2=XLSX.utils.json_to_sheet(detail);
+  ws2['!cols']=[{wch:40},{wch:11},{wch:10},{wch:12},{wch:20},{wch:14},{wch:30},{wch:44},{wch:38}];
+  XLSX.utils.book_append_sheet(wb,ws2,'Detail');
+  XLSX.writeFile(wb,'BGC_Visit_Report_'+new Date().toISOString().slice(0,10)+'.xlsx');}
+function exportJson(){var blob=new Blob([localStorage.getItem(KEY)||'{}'],{type:'application/json'});
+  var a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download='bgc_backup_'+new Date().toISOString().slice(0,10)+'.json';a.click();}
+function importJson(e){var f=e.target.files[0];if(!f)return;var r=new FileReader();
+  r.onload=function(){try{JSON.parse(r.result);localStorage.setItem(KEY,r.result);items=load();
+    renderTargets();stats();refreshMarkers();alert('Restored.');}catch(err){alert('Could not read file.');}};
+  r.readAsText(f);e.target.value='';}
+function resetAll(){if(!confirm('Clear all status/results? Clinic targets stay loaded.'))return;
+  localStorage.removeItem(KEY);items=load();renderTargets();stats();refreshMarkers();}
+
+/* ---- INIT ---- */
+(function(){var gf=document.getElementById('groupFilter');
+  var gs=items.map(function(v){return v.group}).filter(function(x,i,a){return a.indexOf(x)===i}).sort(function(a,b){return a-b});
+  gs.forEach(function(g){gf.innerHTML+='<option value="'+g+'">Group '+g+'</option>';});})();
+renderTargets();stats();
+if(syncUrl){document.getElementById('syncUrl').value=syncUrl;setDot('on');syncMsg('Connected. Use the Save button per clinic.');}
+else{setDot('off');syncMsg('Not connected — paste your Apps Script URL.');}
+</script>
+</body>
+</html>
